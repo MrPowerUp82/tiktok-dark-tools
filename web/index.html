@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceFlow - Audio Extractor & Transcriber</title>
+    <!-- Google Fonts: Inter for premium typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar / Header -->
+        <header class="app-header">
+            <div class="logo-area">
+                <svg class="logo-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM11 16H13V18H11V16ZM11 6H13V14H11V6Z" fill="url(#gradient-logo)"/>
+                    <defs>
+                        <linearGradient id="gradient-logo" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                            <stop stop-color="#8B5CF6"/>
+                            <stop offset="1" stop-color="#EC4899"/>
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <div class="logo-text">
+                    <h1>Voice<span>Flow</span></h1>
+                    <p>AI Audio Extraction & Transcription</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Dashboard Layout -->
+        <main class="dashboard-grid">
+            
+            <!-- Left Panel: Configurations & Files -->
+            <section class="panel-left card">
+                <div class="panel-header">
+                    <h2>Configuration</h2>
+                </div>
+                
+                <!-- File Selection Section -->
+                <div class="setting-group file-selectors">
+                    <div class="file-picker-card">
+                        <label class="field-label">Media Input File</label>
+                        <div class="file-input-wrapper">
+                            <button class="btn btn-secondary btn-icon" id="btn-select-file">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></button>
+                                <span class="file-path-display" id="display-input-file">No file selected</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="file-picker-card">
+                        <label class="field-label">Output Directory</label>
+                        <div class="file-input-wrapper">
+                            <button class="btn btn-secondary btn-icon" id="btn-select-folder">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></button>
+                                <span class="file-path-display" id="display-output-folder">Same directory as input file</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Mode Section -->
+                <div class="setting-group">
+                    <label class="field-label">Action Mode</label>
+                    <div class="mode-selector-grid">
+                        <label class="mode-option">
+                            <input type="radio" name="action-mode" value="both" checked>
+                            <span class="mode-card">
+                                <span class="mode-title">Extract & Transcribe</span>
+                                <span class="mode-desc">Extract audio and generate transcript files</span>
+                            </span>
+                        </label>
+                        <label class="mode-option">
+                            <input type="radio" name="action-mode" value="transcribe">
+                            <span class="mode-card">
+                                <span class="mode-title">Transcribe Only</span>
+                                <span class="mode-desc">Get text from media files directly</span>
+                            </span>
+                        </label>
+                        <label class="mode-option">
+                            <input type="radio" name="action-mode" value="audio">
+                            <span class="mode-card">
+                                <span class="mode-title">Extract Audio Only</span>
+                                <span class="mode-desc">Strip video stream and save audio track</span>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Settings Parameters -->
+                <div class="settings-collapsible">
+                    <div class="setting-row" id="audio-settings-container">
+                        <div class="setting-col">
+                            <label class="field-label" for="audio-format">Audio Output Format</label>
+                            <select class="form-select" id="audio-format">
+                                <option value="mp3">MP3 (High quality, compressed)</option>
+                                <option value="wav" selected>WAV (Lossless 16kHz PCM - optimal for AI)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="setting-row text-settings" id="transcription-settings-container">
+                        <div class="setting-col">
+                            <label class="field-label" for="whisper-model">Model Size</label>
+                            <select class="form-select" id="whisper-model">
+                                <option value="tiny">Tiny (Fastest, lowest accuracy)</option>
+                                <option value="base" selected>Base (Recommended for CPU)</option>
+                                <option value="small">Small (Good accuracy, standard)</option>
+                                <option value="medium">Medium (High accuracy, heavy)</option>
+                                <option value="large-v3">Large V3 (Most accurate, very heavy)</option>
+                            </select>
+                        </div>
+
+                        <div class="setting-col">
+                            <label class="field-label" for="language-select">Language</label>
+                            <select class="form-select" id="language-select">
+                                <option value="auto">Auto-Detect Language</option>
+                                <option value="en">English</option>
+                                <option value="pt">Portuguese</option>
+                                <option value="es">Spanish</option>
+                                <option value="fr">French</option>
+                                <option value="de">German</option>
+                                <option value="it">Italian</option>
+                                <option value="ja">Japanese</option>
+                                <option value="zh">Chinese</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="setting-row text-settings" id="hardware-settings-container">
+                        <div class="setting-col">
+                            <label class="field-label" for="device-select">Device</label>
+                            <select class="form-select" id="device-select">
+                                <option value="cpu" selected>CPU</option>
+                                <option value="cuda">GPU (CUDA - requires Nvidia toolkit)</option>
+                            </select>
+                        </div>
+                        <div class="setting-col">
+                            <label class="field-label" for="compute-type">Quantization</label>
+                            <select class="form-select" id="compute-type">
+                                <option value="int8" selected>int8 (Fast, low RAM CPU)</option>
+                                <option value="float32">float32 (High precision CPU)</option>
+                                <option value="float16">float16 (Standard for CUDA)</option>
+                                <option value="int8_float16">int8_float16 (Low VRAM CUDA)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Export formats checkboxes -->
+                    <div class="setting-group text-settings" id="export-formats-container">
+                        <label class="field-label">Export Formats</label>
+                        <div class="checkbox-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="export-txt" checked>
+                                <span class="custom-checkbox">Text (.txt)</span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="export-srt" checked>
+                                <span class="custom-checkbox">Subtitles (.srt)</span>
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="export-vtt">
+                                <span class="custom-checkbox">WebVTT (.vtt)</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Execute Button Panel -->
+                <div class="action-buttons">
+                    <button class="btn btn-primary btn-large btn-glowing" id="btn-start">
+                        <span>Process File</span>
+                        <svg class="icon btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                    </button>
+                    <button class="btn btn-danger btn-large hidden" id="btn-cancel">
+                        <span>Cancel Task</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Right Panel: Status, Logs & Live Transcript -->
+            <section class="panel-right">
+                
+                <!-- Status & Progress Dashboard -->
+                <div class="card status-card">
+                    <div class="status-header">
+                        <div class="status-indicator">
+                            <span class="pulse-dot idle" id="status-dot"></span>
+                            <span class="status-text" id="status-message">Idle</span>
+                        </div>
+                        <button class="btn btn-secondary btn-small hidden" id="btn-open-folder">
+                            Open Destination
+                        </button>
+                    </div>
+
+                    <!-- Audio Progress Bar -->
+                    <div class="progress-section hidden" id="progress-audio-container">
+                        <div class="progress-info">
+                            <span class="progress-label">Extracting Audio Track</span>
+                            <span class="progress-percent" id="progress-audio-percent">0%</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill fill-purple" id="progress-audio-fill" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <!-- Transcribe Progress Bar -->
+                    <div class="progress-section hidden" id="progress-transcribe-container">
+                        <div class="progress-info">
+                            <span class="progress-label">Transcribing Audio Content</span>
+                            <span class="progress-percent" id="progress-transcribe-percent">0%</span>
+                        </div>
+                        <div class="progress-bar-bg">
+                            <div class="progress-bar-fill fill-pink" id="progress-transcribe-fill" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Transcript / Output Card -->
+                <div class="card transcript-card flex-fill">
+                    <div class="panel-header space-between">
+                        <h2>Live Transcription Output</h2>
+                        <button class="btn btn-secondary btn-small" id="btn-copy" disabled>
+                            Copy To Clipboard
+                        </button>
+                    </div>
+                    <div class="transcript-display-wrapper">
+                        <!-- Scrollable segment listing -->
+                        <div class="transcript-display" id="transcript-display">
+                            <div class="transcript-placeholder" id="transcript-placeholder">
+                                <svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                                <p>Select your configurations, load a file, and click <strong>Process File</strong> to begin.</p>
+                                <p class="sub-placeholder">Real-time whisper transcription segments will appear here.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </section>
+        </main>
+    </div>
+
+    <!-- Eel script linking Javascript bridge -->
+    <script type="text/javascript" src="/eel.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

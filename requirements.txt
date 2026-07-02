@@ -1,0 +1,6 @@
+eel
+faster-whisper
+imageio-ffmpeg
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
+nvidia-cuda-runtime-cu12
