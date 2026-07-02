@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VoiceFlow - Audio Extractor & Transcriber</title>
+    <title>VoiceFlow - AI Audio & Speech Toolkit</title>
     <!-- Google Fonts: Inter for premium typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,14 +26,25 @@
                 </svg>
                 <div class="logo-text">
                     <h1>Voice<span>Flow</span></h1>
-                    <p>AI Audio Extraction & Transcription</p>
+                    <p>AI Audio & Speech Processing Toolkit</p>
                 </div>
             </div>
         </header>
 
-        <!-- Main Dashboard Layout -->
-        <main class="dashboard-grid">
-            
+        <!-- Tab Navigation Menu -->
+        <nav class="tab-navigation">
+            <button class="tab-btn active" data-tab="tab-transcription">
+                <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                Transcription & Extract
+            </button>
+            <button class="tab-btn" data-tab="tab-tts">
+                <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                Text-to-Speech (TTS)
+            </button>
+        </nav>
+
+        <!-- TAB 1: TRANSCRIPTION & AUDIO EXTRACT -->
+        <main class="dashboard-grid active-tab" id="tab-transcription">
             <!-- Left Panel: Configurations & Files -->
             <section class="panel-left card">
                 <div class="panel-header">
@@ -46,9 +57,9 @@
                         <label class="field-label">Media Input File</label>
                         <div class="file-input-wrapper">
                             <button class="btn btn-secondary btn-icon" id="btn-select-file">
-                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></button>
-                                <span class="file-path-display" id="display-input-file">No file selected</span>
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
                             </button>
+                            <span class="file-path-display" id="display-input-file">No file selected</span>
                         </div>
                     </div>
 
@@ -56,9 +67,9 @@
                         <label class="field-label">Output Directory</label>
                         <div class="file-input-wrapper">
                             <button class="btn btn-secondary btn-icon" id="btn-select-folder">
-                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></button>
-                                <span class="file-path-display" id="display-output-folder">Same directory as input file</span>
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                             </button>
+                            <span class="file-path-display" id="display-output-folder">Same directory as input file</span>
                         </div>
                     </div>
                 </div>
@@ -184,7 +195,6 @@
 
             <!-- Right Panel: Status, Logs & Live Transcript -->
             <section class="panel-right">
-                
                 <!-- Status & Progress Dashboard -->
                 <div class="card status-card">
                     <div class="status-header">
@@ -229,7 +239,6 @@
                         </button>
                     </div>
                     <div class="transcript-display-wrapper">
-                        <!-- Scrollable segment listing -->
                         <div class="transcript-display" id="transcript-display">
                             <div class="transcript-placeholder" id="transcript-placeholder">
                                 <svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
@@ -239,7 +248,128 @@
                         </div>
                     </div>
                 </div>
+            </section>
+        </main>
 
+        <!-- TAB 2: TEXT-TO-SPEECH (TTS) -->
+        <main class="dashboard-grid" id="tab-tts">
+            <!-- Left Panel: Text Input & Configurations -->
+            <section class="panel-left card">
+                <div class="panel-header">
+                    <h2>Speech Configuration</h2>
+                </div>
+
+                <!-- Text Area Input -->
+                <div class="setting-group">
+                    <label class="field-label" for="tts-text-input">Text to Synthesize</label>
+                    <textarea class="form-textarea" id="tts-text-input" placeholder="Type or paste the text you want to convert into speech here..."></textarea>
+                </div>
+
+                <!-- Folder Selector and filename -->
+                <div class="setting-group file-selectors">
+                    <div class="file-picker-card">
+                        <label class="field-label">Save Directory</label>
+                        <div class="file-input-wrapper">
+                            <button class="btn btn-secondary btn-icon" id="btn-select-folder-tts">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                            </button>
+                            <span class="file-path-display" id="display-output-folder-tts">Same directory as program</span>
+                        </div>
+                    </div>
+
+                    <div class="file-picker-card">
+                        <label class="field-label" for="tts-filename">Output Filename</label>
+                        <div class="file-input-wrapper">
+                            <input type="text" class="form-input" id="tts-filename" value="speech" placeholder="Filename (e.g. synthesized)">
+                            <span class="file-extension-label">.mp3</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Collapsible Settings -->
+                <div class="settings-collapsible">
+                    <div class="setting-row">
+                        <div class="setting-col">
+                            <label class="field-label" for="tts-voice-select">Voice Speaker</label>
+                            <select class="form-select" id="tts-voice-select">
+                                <option value="" disabled selected>Loading voices...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Speed rate control -->
+                    <div class="setting-group slider-group">
+                        <div class="slider-info">
+                            <label class="field-label" for="tts-rate">Speaking Speed (Rate)</label>
+                            <span class="slider-value" id="tts-rate-value">Normal (1.0x)</span>
+                        </div>
+                        <input type="range" class="form-range" id="tts-rate" min="-50" max="50" value="0" step="5">
+                    </div>
+
+                    <!-- Pitch control -->
+                    <div class="setting-group slider-group">
+                        <div class="slider-info">
+                            <label class="field-label" for="tts-pitch">Voice Pitch</label>
+                            <span class="slider-value" id="tts-pitch-value">Normal (0Hz)</span>
+                        </div>
+                        <input type="range" class="form-range" id="tts-pitch" min="-20" max="20" value="0" step="1">
+                    </div>
+                </div>
+
+                <!-- Action Button -->
+                <div class="action-buttons">
+                    <button class="btn btn-primary btn-large btn-glowing" id="btn-start-tts">
+                        <span>Generate Audio</span>
+                        <svg class="icon btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                    </button>
+                    <button class="btn btn-danger btn-large hidden" id="btn-cancel-tts">
+                        <span>Cancel Synthesis</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Right Panel: Status, Logs & Audio player -->
+            <section class="panel-right">
+                <!-- Status dashboard -->
+                <div class="card status-card">
+                    <div class="status-header">
+                        <div class="status-indicator">
+                            <span class="pulse-dot idle" id="status-dot-tts"></span>
+                            <span class="status-text" id="status-message-tts">Idle</span>
+                        </div>
+                        <button class="btn btn-secondary btn-small hidden" id="btn-open-folder-tts">
+                            Open Destination
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Playback controls -->
+                <div class="card transcript-card flex-fill">
+                    <div class="panel-header">
+                        <h2>Audio Playback</h2>
+                    </div>
+                    <div class="playback-display-wrapper">
+                        <div class="playback-display">
+                            <div class="playback-placeholder" id="playback-placeholder">
+                                <svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                                </svg>
+                                <p>Click <strong>Generate Audio</strong> to convert text to speech.</p>
+                                <p class="sub-placeholder">A custom audio player will appear here for immediate playback.</p>
+                            </div>
+                            
+                            <!-- Hidden HTML Audio element -->
+                            <div class="player-container hidden" id="player-container">
+                                <audio id="tts-audio-player" controls></audio>
+                                <div class="player-success-note">
+                                    <svg class="icon success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    <span>File saved and loaded successfully! Ready for playback.</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </section>
         </main>
     </div>

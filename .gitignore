@@ -47,3 +47,5 @@ Thumbs.db
 # App-specific temporary files
 _temp_*
 **/_temp_*
+
+web/temp/

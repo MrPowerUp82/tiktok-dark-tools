@@ -377,6 +377,115 @@ def process_worker(options):
         traceback.print_exc()
         eel.task_failed(str(e))()
 
+@eel.expose
+def get_voices():
+    """Fetches Microsoft Edge TTS voices, with localization and online/offline handling."""
+    try:
+        import asyncio
+        import edge_tts
+        async def fetch_voices():
+            voices = await edge_tts.VoicesManager.create()
+            return [
+                {
+                    'name': v['Name'],
+                    'shortName': v['ShortName'],
+                    'gender': v['Gender'],
+                    'locale': v['Locale'],
+                    'friendlyName': f"{v['Locale']} - {v['ShortName'].split('-')[-1]} ({v['Gender']})"
+                }
+                for v in voices.voices
+            ]
+            
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        res = loop.run_until_complete(fetch_voices())
+        loop.close()
+        return res
+    except Exception as e:
+        print("Error fetching edge-tts voices:", e)
+        # Fallback list of common voices
+        return [
+            {'shortName': 'pt-BR-FranciscaNeural', 'friendlyName': 'pt-BR - Francisca (Female)', 'locale': 'pt-BR', 'gender': 'Female'},
+            {'shortName': 'pt-BR-AntonioNeural', 'friendlyName': 'pt-BR - Antonio (Male)', 'locale': 'pt-BR', 'gender': 'Male'},
+            {'shortName': 'en-US-AriaNeural', 'friendlyName': 'en-US - Aria (Female)', 'locale': 'en-US', 'gender': 'Female'},
+            {'shortName': 'en-US-GuyNeural', 'friendlyName': 'en-US - Guy (Male)', 'locale': 'en-US', 'gender': 'Male'},
+            {'shortName': 'es-ES-ElviraNeural', 'friendlyName': 'es-ES - Elvira (Female)', 'locale': 'es-ES', 'gender': 'Female'},
+            {'shortName': 'es-ES-AlvaroNeural', 'friendlyName': 'es-ES - Alvaro (Male)', 'locale': 'es-ES', 'gender': 'Male'}
+        ]
+
+def tts_worker(options):
+    """Worker executing speech synthesis in the background."""
+    global cancel_requested
+    text = options.get('text')
+    voice = options.get('voice')
+    output_dir = options.get('outputDir')
+    file_name = options.get('fileName', 'speech')
+    rate = options.get('rate', '+0%')
+    pitch = options.get('pitch', '+0Hz')
+    
+    if not text:
+        eel.task_failed("Text cannot be empty.")()
+        return
+        
+    if not output_dir or not os.path.exists(output_dir):
+        # Default to user's Documents folder if output_dir is empty
+        output_dir = os.path.join(os.path.expanduser('~'), 'Documents')
+        os.makedirs(output_dir, exist_ok=True)
+        
+    output_path = os.path.join(output_dir, f"{file_name}.mp3")
+    
+    try:
+        import asyncio
+        import edge_tts
+        
+        eel.update_status("Initializing TTS engine...")()
+        
+        communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
+        
+        eel.update_status("Synthesizing speech from text...")()
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(communicate.save(output_path))
+        loop.close()
+        
+        if cancel_requested:
+            if os.path.exists(output_path):
+                try:
+                    os.remove(output_path)
+                except Exception:
+                    pass
+            eel.task_cancelled()()
+            return
+            
+        # Copy to web temp folder for playing in UI player
+        web_temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web', 'temp')
+        os.makedirs(web_temp_dir, exist_ok=True)
+        web_temp_path = os.path.join(web_temp_dir, 'playback.mp3')
+        try:
+            shutil.copy(output_path, web_temp_path)
+        except Exception as e:
+            print("Error copying to temp playback:", e)
+            
+        eel.task_completed(f"Speech generated successfully as: {os.path.basename(output_path)}")()
+        eel.tts_completed("temp/playback.mp3")()
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        eel.task_failed(str(e))()
+
+@eel.expose
+def generate_tts(options):
+    """Starts the speech synthesis background thread."""
+    global active_thread, cancel_requested
+    if active_thread and active_thread.is_alive():
+        return "A task is already in progress."
+        
+    cancel_requested = False
+    active_thread = threading.Thread(target=tts_worker, args=(options,))
+    active_thread.start()
+    return "Started"
+
 if __name__ == '__main__':
     # Initialize eel
     eel.init('web')

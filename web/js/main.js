@@ -1,10 +1,17 @@
 // --- Global State ---
 let inputFile = null;
 let outputDir = null;
+let outputDirTts = null;
 let isProcessing = false;
 let segmentsText = [];
+let activeTab = 'tab-transcription';
 
 // --- DOM Elements ---
+// Tab Buttons
+const tabButtons = document.querySelectorAll('.tab-btn');
+const tabs = document.querySelectorAll('.dashboard-grid');
+
+// Tab 1 (Transcription) Elements
 const btnSelectFile = document.getElementById('btn-select-file');
 const btnSelectFolder = document.getElementById('btn-select-folder');
 const displayInputFile = document.getElementById('display-input-file');
@@ -29,6 +36,28 @@ const progressTranscribePercent = document.getElementById('progress-transcribe-p
 const transcriptDisplay = document.getElementById('transcript-display');
 const transcriptPlaceholder = document.getElementById('transcript-placeholder');
 
+// Tab 2 (TTS) Elements
+const btnSelectFolderTts = document.getElementById('btn-select-folder-tts');
+const displayOutputFolderTts = document.getElementById('display-output-folder-tts');
+const ttsTextInput = document.getElementById('tts-text-input');
+const ttsFilename = document.getElementById('tts-filename');
+const ttsVoiceSelect = document.getElementById('tts-voice-select');
+const ttsRateSlider = document.getElementById('tts-rate');
+const ttsRateValue = document.getElementById('tts-rate-value');
+const ttsPitchSlider = document.getElementById('tts-pitch');
+const ttsPitchValue = document.getElementById('tts-pitch-value');
+
+const btnStartTts = document.getElementById('btn-start-tts');
+const btnCancelTts = document.getElementById('btn-cancel-tts');
+const btnOpenFolderTts = document.getElementById('btn-open-folder-tts');
+
+const statusDotTts = document.getElementById('status-dot-tts');
+const statusMessageTts = document.getElementById('status-message-tts');
+
+const playbackPlaceholder = document.getElementById('playback-placeholder');
+const playerContainer = document.getElementById('player-container');
+const ttsAudioPlayer = document.getElementById('tts-audio-player');
+
 // --- Helper Functions ---
 function getBasename(path) {
     return path.split(/[/\\]/).pop();
@@ -44,13 +73,14 @@ function formatSeconds(secs) {
 function setControlsDisabled(disabled) {
     isProcessing = disabled;
     
-    // Disable inputs
+    // Lock/Unlock tabs
+    tabButtons.forEach(btn => btn.disabled = disabled);
+
+    // Disable Tab 1 Controls
     btnSelectFile.disabled = disabled;
     btnSelectFolder.disabled = disabled;
-    
     const radios = document.querySelectorAll('input[name="action-mode"]');
     radios.forEach(r => r.disabled = disabled);
-    
     document.getElementById('whisper-model').disabled = disabled;
     document.getElementById('language-select').disabled = disabled;
     document.getElementById('device-select').disabled = disabled;
@@ -67,9 +97,25 @@ function setControlsDisabled(disabled) {
         btnStart.classList.remove('hidden');
         btnCancel.classList.add('hidden');
     }
+
+    // Disable Tab 2 Controls
+    btnSelectFolderTts.disabled = disabled;
+    ttsTextInput.disabled = disabled;
+    ttsFilename.disabled = disabled;
+    ttsVoiceSelect.disabled = disabled;
+    ttsRateSlider.disabled = disabled;
+    ttsPitchSlider.disabled = disabled;
+
+    if (disabled) {
+        btnStartTts.classList.add('hidden');
+        btnCancelTts.classList.remove('hidden');
+    } else {
+        btnStartTts.classList.remove('hidden');
+        btnCancelTts.classList.add('hidden');
+    }
 }
 
-// Toggle options view depending on which mode is selected
+// Toggle options view depending on which mode is selected (Tab 1)
 function updateModeUI() {
     const mode = document.querySelector('input[name="action-mode"]:checked').value;
     const audioSettings = document.getElementById('audio-settings-container');
@@ -87,14 +133,91 @@ function updateModeUI() {
     }
 }
 
+// Load and populate available voices in dropdown (Tab 2)
+async function loadVoices() {
+    try {
+        ttsVoiceSelect.innerHTML = '<option value="" disabled selected>Loading voices list...</option>';
+        const voices = await eel.get_voices()();
+        ttsVoiceSelect.innerHTML = '';
+        
+        if (!voices || voices.length === 0) {
+            ttsVoiceSelect.innerHTML = '<option value="pt-BR-FranciscaNeural">pt-BR - Francisca (Female)</option>';
+            return;
+        }
+
+        // Sort by locale (language) first, then gender
+        voices.sort((a, b) => {
+            if (a.locale !== b.locale) return a.locale.localeCompare(b.locale);
+            return a.gender.localeCompare(b.gender);
+        });
+
+        let defaultIndex = 0;
+        voices.forEach((v, index) => {
+            const opt = document.createElement('option');
+            opt.value = v.shortName;
+            opt.textContent = v.friendlyName;
+            ttsVoiceSelect.appendChild(opt);
+
+            // Default to pt-BR Francisca voice
+            if (v.shortName === 'pt-BR-FranciscaNeural') {
+                defaultIndex = index;
+            }
+        });
+
+        ttsVoiceSelect.selectedIndex = defaultIndex;
+    } catch (err) {
+        console.error("Failed to load voices:", err);
+        ttsVoiceSelect.innerHTML = '<option value="pt-BR-FranciscaNeural">pt-BR - Francisca (Female) [Fallback]</option>';
+    }
+}
+
+// Format rate value slider label (+/- X%)
+function formatRateLabel(value) {
+    if (value === 0) return "Normal (1.0x)";
+    const prefix = value > 0 ? "+" : "";
+    return `${prefix}${value}%`;
+}
+
+// Format pitch value slider label (+/- XHz)
+function formatPitchLabel(value) {
+    if (value === 0) return "Normal (0Hz)";
+    const prefix = value > 0 ? "+" : "";
+    return `${prefix}${value}Hz`;
+}
+
 // --- Event Listeners ---
 
-// Watch radio buttons mode change
+// Tab switching logic
+tabButtons.forEach(button => {
+    button.addEventListener('click', () => {
+        if (isProcessing) return; // Do not switch while running
+        
+        const targetTab = button.getAttribute('data-tab');
+        
+        tabButtons.forEach(btn => btn.classList.remove('active'));
+        tabs.forEach(tab => tab.classList.remove('active-tab'));
+        
+        button.classList.add('active');
+        document.getElementById(targetTab).classList.add('active-tab');
+        activeTab = targetTab;
+    });
+});
+
+// Slider inputs value labels binding
+ttsRateSlider.addEventListener('input', (e) => {
+    ttsRateValue.textContent = formatRateLabel(parseInt(e.target.value));
+});
+
+ttsPitchSlider.addEventListener('input', (e) => {
+    ttsPitchValue.textContent = formatPitchLabel(parseInt(e.target.value));
+});
+
+// Watch radio buttons mode change (Tab 1)
 document.querySelectorAll('input[name="action-mode"]').forEach(radio => {
     radio.addEventListener('change', updateModeUI);
 });
 
-// Select file button click handler
+// Select input file (Tab 1)
 btnSelectFile.addEventListener('click', async () => {
     if (isProcessing) return;
     try {
@@ -105,9 +228,8 @@ btnSelectFile.addEventListener('click', async () => {
             displayInputFile.title = path;
             displayInputFile.style.color = 'var(--text-primary)';
             
-            // Set output folder defaults if not selected yet
+            // Auto-fill output folder if empty
             if (!outputDir) {
-                // Remove filename to show output directory placeholder
                 const defaultDir = path.substring(0, Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')));
                 displayOutputFolder.textContent = defaultDir;
                 displayOutputFolder.title = defaultDir;
@@ -119,7 +241,7 @@ btnSelectFile.addEventListener('click', async () => {
     }
 });
 
-// Select folder button click handler
+// Select output folder (Tab 1)
 btnSelectFolder.addEventListener('click', async () => {
     if (isProcessing) return;
     try {
@@ -135,7 +257,23 @@ btnSelectFolder.addEventListener('click', async () => {
     }
 });
 
-// Start button click handler
+// Select output folder (Tab 2)
+btnSelectFolderTts.addEventListener('click', async () => {
+    if (isProcessing) return;
+    try {
+        const path = await eel.select_folder()();
+        if (path) {
+            outputDirTts = path;
+            displayOutputFolderTts.textContent = path;
+            displayOutputFolderTts.title = path;
+            displayOutputFolderTts.style.color = 'var(--text-primary)';
+        }
+    } catch (err) {
+        console.error("Failed to select folder for TTS:", err);
+    }
+});
+
+// Start button (Tab 1 - Transcribe)
 btnStart.addEventListener('click', async () => {
     if (isProcessing) return;
     
@@ -146,7 +284,6 @@ btnStart.addEventListener('click', async () => {
     
     const mode = document.querySelector('input[name="action-mode"]:checked').value;
     
-    // Validate export checkboxes if transcription is selected
     let exportFormats = [];
     if (mode === 'transcribe' || mode === 'both') {
         if (document.getElementById('export-txt').checked) exportFormats.push('txt');
@@ -159,13 +296,11 @@ btnStart.addEventListener('click', async () => {
         }
     }
     
-    // Clear displays and transcripts
     segmentsText = [];
     transcriptDisplay.innerHTML = '';
     btnCopy.disabled = true;
     btnOpenFolder.classList.add('hidden');
     
-    // Reset progress fill values
     progressAudioFill.style.width = '0%';
     progressAudioPercent.textContent = '0%';
     progressAudioContainer.classList.add('hidden');
@@ -174,14 +309,12 @@ btnStart.addEventListener('click', async () => {
     progressTranscribePercent.textContent = '0%';
     progressTranscribeContainer.classList.add('hidden');
     
-    // Update active UI status
     setControlsDisabled(true);
     updateStatusDot('active');
     
-    // Build options payload
     const options = {
         inputFile: inputFile,
-        outputDir: outputDir, // Will default to file dir in backend if empty
+        outputDir: outputDir,
         action: mode,
         audioFormat: document.getElementById('audio-format').value,
         modelSize: document.getElementById('whisper-model').value,
@@ -200,14 +333,71 @@ btnStart.addEventListener('click', async () => {
             statusMessage.textContent = response;
         }
     } catch (err) {
-        console.error("Error executing processing task:", err);
+        console.error("Error executing task:", err);
         setControlsDisabled(false);
         updateStatusDot('error');
         statusMessage.textContent = "Error: " + err;
     }
 });
 
-// Cancel button click handler
+// Start button (Tab 2 - TTS)
+btnStartTts.addEventListener('click', async () => {
+    if (isProcessing) return;
+    
+    const text = ttsTextInput.value.trim();
+    if (!text) {
+        alert("Please type or paste some text to generate speech.");
+        return;
+    }
+    
+    const filename = ttsFilename.value.trim();
+    if (!filename) {
+        alert("Please enter an output filename.");
+        return;
+    }
+    
+    // Hide player controls, show placeholder
+    playerContainer.classList.add('hidden');
+    playbackPlaceholder.classList.remove('hidden');
+    btnOpenFolderTts.classList.add('hidden');
+    ttsAudioPlayer.pause();
+    
+    setControlsDisabled(true);
+    updateStatusDot('active');
+    
+    // Format rate & pitch values to include +/- signs as expected by edge-tts
+    const rateVal = parseInt(ttsRateSlider.value);
+    const rateString = `${rateVal >= 0 ? '+' : ''}${rateVal}%`;
+    
+    const pitchVal = parseInt(ttsPitchSlider.value);
+    const pitchString = `${pitchVal >= 0 ? '+' : ''}${pitchVal}Hz`;
+    
+    const options = {
+        text: text,
+        voice: ttsVoiceSelect.value,
+        outputDir: outputDirTts,
+        fileName: filename,
+        rate: rateString,
+        pitch: pitchString
+    };
+    
+    try {
+        const response = await eel.generate_tts(options)();
+        if (response !== "Started") {
+            alert(response);
+            setControlsDisabled(false);
+            updateStatusDot('idle');
+            statusMessageTts.textContent = response;
+        }
+    } catch (err) {
+        console.error("Error executing TTS task:", err);
+        setControlsDisabled(false);
+        updateStatusDot('error');
+        statusMessageTts.textContent = "Error: " + err;
+    }
+});
+
+// Cancel buttons
 btnCancel.addEventListener('click', async () => {
     if (!isProcessing) return;
     statusMessage.textContent = "Requesting cancel...";
@@ -215,14 +405,24 @@ btnCancel.addEventListener('click', async () => {
     try {
         await eel.cancel_task()();
     } catch (err) {
-        console.error("Failed to cancel task:", err);
+        console.error("Failed to cancel transcription task:", err);
     }
 });
 
-// Copy to clipboard click handler
+btnCancelTts.addEventListener('click', async () => {
+    if (!isProcessing) return;
+    statusMessageTts.textContent = "Requesting cancel...";
+    btnCancelTts.disabled = true;
+    try {
+        await eel.cancel_task()();
+    } catch (err) {
+        console.error("Failed to cancel TTS task:", err);
+    }
+});
+
+// Copy transcript
 btnCopy.addEventListener('click', () => {
     if (segmentsText.length === 0) return;
-    
     const textToCopy = segmentsText.join('\n');
     navigator.clipboard.writeText(textToCopy).then(() => {
         const originalText = btnCopy.textContent;
@@ -234,34 +434,48 @@ btnCopy.addEventListener('click', () => {
             btnCopy.style.borderColor = '';
             btnCopy.style.color = '';
         }, 2000);
-    }).catch(err => {
-        console.error('Could not copy text to clipboard: ', err);
     });
 });
 
-// Open Folder button click handler
+// Open directories buttons
 btnOpenFolder.addEventListener('click', async () => {
-    // If outputDir is null, use parent dir of inputFile
     const targetDir = outputDir || inputFile.substring(0, Math.max(inputFile.lastIndexOf('/'), inputFile.lastIndexOf('\\')));
     try {
         await eel.open_output_dir(targetDir)();
     } catch (err) {
-        console.error("Failed to open directory:", err);
+        console.error("Failed to open output directory:", err);
     }
 });
 
-// Status helper to change pulse color
+btnOpenFolderTts.addEventListener('click', async () => {
+    // If outputDirTts is null, let's assume default dir is documents folder
+    const targetDir = outputDirTts || "C:\\Users\\" + displayOutputFolderTts.title; // backend will handle directory opening safely if we pass absolute folder
+    try {
+        await eel.open_output_dir(outputDirTts || "")(); // Backend defaults to documents if empty
+    } catch (err) {
+        console.error("Failed to open TTS directory:", err);
+    }
+});
+
+// Helper to update visual pulse dot in active tab
 function updateStatusDot(state) {
-    statusDot.className = 'pulse-dot';
-    statusDot.classList.add(state);
+    if (activeTab === 'tab-transcription') {
+        statusDot.className = 'pulse-dot ' + state;
+    } else {
+        statusDotTts.className = 'pulse-dot ' + state;
+    }
 }
 
 // --- Exposed Eel Callback Functions (Called by Python) ---
 
 eel.expose(update_status);
 function update_status(message) {
-    statusMessage.textContent = message;
-    console.log("[Status Update]:", message);
+    if (activeTab === 'tab-transcription') {
+        statusMessage.textContent = message;
+    } else {
+        statusMessageTts.textContent = message;
+    }
+    console.log("[Status]:", message);
 }
 
 eel.expose(update_progress);
@@ -280,12 +494,10 @@ function update_progress(phase, progress, message) {
 
 eel.expose(new_segment);
 function new_segment(segment) {
-    // Remove placeholder on first segment
     if (transcriptPlaceholder) {
         transcriptPlaceholder.remove();
     }
     
-    // Create segment card element
     const segDiv = document.createElement('div');
     segDiv.className = 'transcript-segment';
     
@@ -301,11 +513,8 @@ function new_segment(segment) {
     segDiv.appendChild(textSpan);
     
     transcriptDisplay.appendChild(segDiv);
-    
-    // Auto-scroll scroll container
     transcriptDisplay.scrollTop = transcriptDisplay.scrollHeight;
     
-    // Save to copy cache
     segmentsText.push(`[${formatSeconds(segment.start)} -> ${formatSeconds(segment.end)}] ${segment.text.trim()}`);
 }
 
@@ -313,34 +522,71 @@ eel.expose(task_completed);
 function task_completed(message) {
     setControlsDisabled(false);
     updateStatusDot('success');
-    statusMessage.textContent = message;
-    btnCancel.disabled = false;
     
-    // Enable post-process actions
-    if (segmentsText.length > 0) {
-        btnCopy.disabled = false;
+    if (activeTab === 'tab-transcription') {
+        statusMessage.textContent = message;
+        btnOpenFolder.classList.remove('hidden');
+        if (segmentsText.length > 0) {
+            btnCopy.disabled = false;
+        }
+    } else {
+        statusMessageTts.textContent = message;
+        btnOpenFolderTts.classList.remove('hidden');
     }
-    btnOpenFolder.classList.remove('hidden');
+    
+    btnCancel.disabled = false;
+    btnCancelTts.disabled = false;
 }
 
 eel.expose(task_failed);
 function task_failed(errorMessage) {
     setControlsDisabled(false);
     updateStatusDot('error');
-    statusMessage.textContent = "Failed: " + errorMessage;
+    
+    if (activeTab === 'tab-transcription') {
+        statusMessage.textContent = "Failed: " + errorMessage;
+    } else {
+        statusMessageTts.textContent = "Failed: " + errorMessage;
+    }
+    
     btnCancel.disabled = false;
-    btnOpenFolder.classList.add('hidden');
+    btnCancelTts.disabled = false;
 }
 
 eel.expose(task_cancelled);
 function task_cancelled() {
     setControlsDisabled(false);
     updateStatusDot('idle');
-    statusMessage.textContent = "Task cancelled by user.";
+    
+    if (activeTab === 'tab-transcription') {
+        statusMessage.textContent = "Task cancelled by user.";
+    } else {
+        statusMessageTts.textContent = "Task cancelled by user.";
+    }
+    
     btnCancel.disabled = false;
-    btnOpenFolder.classList.add('hidden');
+    btnCancelTts.disabled = false;
+}
+
+// Exposed callback specifically for Text-to-Speech completion
+eel.expose(tts_completed);
+function tts_completed(tempFilePath) {
+    // Hide placeholder, show audio controls
+    playbackPlaceholder.classList.add('hidden');
+    playerContainer.classList.remove('hidden');
+    
+    // Add dynamic query parameter to clear cache
+    ttsAudioPlayer.src = `${tempFilePath}?t=${Date.now()}`;
+    ttsAudioPlayer.classList.remove('hidden');
+    ttsAudioPlayer.load();
+    
+    // Auto-play generated speech
+    ttsAudioPlayer.play().catch(err => {
+        console.warn("Audio autoplay blocked by browser policy:", err);
+    });
 }
 
 // Initial UI triggers
 updateModeUI();
-console.log("VoiceFlow UI initialized successfully.");
+loadVoices();
+console.log("VoiceFlow UI and tabs loaded successfully.");

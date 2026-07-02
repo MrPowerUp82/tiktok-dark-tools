@@ -118,11 +118,15 @@ body {
 
 /* Dashboard Grid split */
 .dashboard-grid {
-    display: grid;
+    display: none;
     grid-template-columns: 460px 1fr;
     gap: 1.5rem;
     flex-grow: 1;
     min-height: 0; /* Important to enable scroll in child columns */
+}
+
+.dashboard-grid.active-tab {
+    display: grid;
 }
 
 @media (max-width: 1024px) {
@@ -690,4 +694,245 @@ body {
 .sub-placeholder {
     font-size: 0.75rem !important;
     color: var(--text-muted);
+}
+
+/* -------------------------------------------------------------
+ * Tab Navigation Menu Styling
+ * ------------------------------------------------------------- */
+.tab-navigation {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    padding-bottom: 8px;
+    flex-shrink: 0;
+}
+
+.tab-btn {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 0.95rem;
+    font-weight: 500;
+    padding: 0.6rem 1.2rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: var(--transition-fast);
+    position: relative;
+}
+
+.tab-btn:hover {
+    color: var(--text-primary);
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.tab-btn.active {
+    color: #c084fc;
+    background-color: rgba(139, 92, 246, 0.08);
+}
+
+.tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -9px;
+    left: 0;
+    width: 100%;
+    height: 2px;
+    background: linear-gradient(90deg, var(--primary), var(--secondary));
+    box-shadow: 0 0 8px var(--primary);
+}
+
+.tab-icon {
+    width: 18px;
+    height: 18px;
+}
+
+/* -------------------------------------------------------------
+ * Text-to-Speech (TTS) Specific Element Styling
+ * ------------------------------------------------------------- */
+.form-textarea {
+    background-color: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    padding: 1rem;
+    font-family: var(--font-sans);
+    font-size: 0.95rem;
+    outline: none;
+    resize: vertical;
+    min-height: 120px;
+    max-height: 300px;
+    width: 100%;
+    transition: var(--transition-fast);
+}
+
+.form-textarea:hover, .form-textarea:focus {
+    border-color: var(--border-color-hover);
+    box-shadow: 0 0 10px var(--primary-glow);
+}
+
+.form-input {
+    background-color: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    padding: 0.6rem 0.8rem;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    outline: none;
+    flex-grow: 1;
+    width: 100%;
+    transition: var(--transition-fast);
+}
+
+.form-input:hover, .form-input:focus {
+    border-color: var(--border-color-hover);
+    box-shadow: 0 0 8px var(--primary-glow);
+}
+
+.file-extension-label {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    padding-right: 8px;
+    user-select: none;
+}
+
+/* Sliders */
+.slider-group {
+    gap: 0.25rem !important;
+}
+
+.slider-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.slider-value {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: #c084fc;
+    font-weight: 500;
+}
+
+.form-range {
+    width: 100%;
+    height: 6px;
+    background: var(--bg-input);
+    outline: none;
+    border-radius: 3px;
+    cursor: pointer;
+    -webkit-appearance: none;
+}
+
+.form-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+    box-shadow: 0 0 8px var(--primary);
+    cursor: pointer;
+    transition: transform 0.1s ease;
+}
+
+.form-range::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+/* Playback and Audio player designs */
+.playback-display-wrapper {
+    background-color: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 2rem;
+}
+
+.playback-display {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+.playback-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: var(--text-secondary);
+    gap: 10px;
+}
+
+.playback-placeholder p {
+    font-size: 0.9rem;
+    max-width: 320px;
+}
+
+.playback-placeholder strong {
+    color: var(--primary);
+}
+
+.player-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+    width: 100%;
+    max-width: 460px;
+    animation: fadeIn 0.4s ease;
+}
+
+#tts-audio-player {
+    width: 100%;
+    outline: none;
+}
+
+/* Style default HTML audio player for dark mode */
+#tts-audio-player::-webkit-media-controls-enclosure {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+}
+
+#tts-audio-player::-webkit-media-controls-panel {
+    background-color: var(--bg-card);
+}
+
+#tts-audio-player::-webkit-media-controls-current-time-display,
+#tts-audio-player::-webkit-media-controls-time-remaining-display {
+    color: var(--text-primary);
+}
+
+.player-success-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: var(--color-success);
+    background-color: rgba(16, 185, 129, 0.05);
+    border: 1px solid rgba(16, 185, 129, 0.15);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1rem;
+    width: 100%;
+    justify-content: center;
+}
+
+.success-icon {
+    width: 14px;
+    height: 14px;
 }
