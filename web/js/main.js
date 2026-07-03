@@ -2,6 +2,8 @@
 let inputFile = null;
 let outputDir = null;
 let outputDirTts = null;
+let outputDirClone = null;
+let refAudioFile = null;
 let isProcessing = false;
 let segmentsText = [];
 let activeTab = 'tab-transcription';
@@ -58,6 +60,27 @@ const playbackPlaceholder = document.getElementById('playback-placeholder');
 const playerContainer = document.getElementById('player-container');
 const ttsAudioPlayer = document.getElementById('tts-audio-player');
 
+// Tab 3 (Voice Cloning) Elements
+const btnSelectRefAudio = document.getElementById('btn-select-ref-audio');
+const displayRefAudio = document.getElementById('display-ref-audio');
+const btnSelectFolderClone = document.getElementById('btn-select-folder-clone');
+const displayOutputFolderClone = document.getElementById('display-output-folder-clone');
+const cloneFilename = document.getElementById('clone-filename');
+const btnAutoTranscribe = document.getElementById('btn-auto-transcribe');
+const cloneRefText = document.getElementById('clone-ref-text');
+const cloneGenText = document.getElementById('clone-gen-text');
+
+const btnStartClone = document.getElementById('btn-start-clone');
+const btnCancelClone = document.getElementById('btn-cancel-clone');
+const btnOpenFolderClone = document.getElementById('btn-open-folder-clone');
+
+const statusDotClone = document.getElementById('status-dot-clone');
+const statusMessageClone = document.getElementById('status-message-clone');
+
+const playbackPlaceholderClone = document.getElementById('playback-placeholder-clone');
+const playerContainerClone = document.getElementById('player-container-clone');
+const cloneAudioPlayer = document.getElementById('clone-audio-player');
+
 // --- Helper Functions ---
 function getBasename(path) {
     return path.split(/[/\\]/).pop();
@@ -112,6 +135,24 @@ function setControlsDisabled(disabled) {
     } else {
         btnStartTts.classList.remove('hidden');
         btnCancelTts.classList.add('hidden');
+    }
+
+    // Disable Tab 3 Controls
+    btnSelectRefAudio.disabled = disabled;
+    btnSelectFolderClone.disabled = disabled;
+    cloneFilename.disabled = disabled;
+    btnAutoTranscribe.disabled = disabled;
+    cloneRefText.disabled = disabled;
+    cloneGenText.disabled = disabled;
+    document.getElementById('clone-model-select').disabled = disabled;
+    document.getElementById('clone-remove-noise').disabled = disabled;
+
+    if (disabled) {
+        btnStartClone.classList.add('hidden');
+        btnCancelClone.classList.remove('hidden');
+    } else {
+        btnStartClone.classList.remove('hidden');
+        btnCancelClone.classList.add('hidden');
     }
 }
 
@@ -203,7 +244,7 @@ tabButtons.forEach(button => {
     });
 });
 
-// Slider inputs value labels binding
+// Slider inputs value labels binding (Tab 2)
 ttsRateSlider.addEventListener('input', (e) => {
     ttsRateValue.textContent = formatRateLabel(parseInt(e.target.value));
 });
@@ -270,6 +311,70 @@ btnSelectFolderTts.addEventListener('click', async () => {
         }
     } catch (err) {
         console.error("Failed to select folder for TTS:", err);
+    }
+});
+
+// Select reference audio (Tab 3)
+btnSelectRefAudio.addEventListener('click', async () => {
+    if (isProcessing) return;
+    try {
+        const path = await eel.select_file()();
+        if (path) {
+            refAudioFile = path;
+            displayRefAudio.textContent = getBasename(path);
+            displayRefAudio.title = path;
+            displayRefAudio.style.color = 'var(--text-primary)';
+        }
+    } catch (err) {
+        console.error("Failed to select reference audio:", err);
+    }
+});
+
+// Select output folder (Tab 3)
+btnSelectFolderClone.addEventListener('click', async () => {
+    if (isProcessing) return;
+    try {
+        const path = await eel.select_folder()();
+        if (path) {
+            outputDirClone = path;
+            displayOutputFolderClone.textContent = path;
+            displayOutputFolderClone.title = path;
+            displayOutputFolderClone.style.color = 'var(--text-primary)';
+        }
+    } catch (err) {
+        console.error("Failed to select folder for voice cloning:", err);
+    }
+});
+
+// Auto-Transcribe Reference Audio (Tab 3)
+btnAutoTranscribe.addEventListener('click', async () => {
+    if (isProcessing) return;
+    
+    if (!refAudioFile) {
+        alert("Please select a reference audio file first.");
+        return;
+    }
+    
+    btnAutoTranscribe.disabled = true;
+    btnAutoTranscribe.textContent = 'Transcribing...';
+    updateStatusDot('active');
+    
+    try {
+        const transcription = await eel.transcribe_reference(refAudioFile)();
+        if (transcription.startsWith("Error")) {
+            alert(transcription);
+            updateStatusDot('error');
+        } else {
+            cloneRefText.value = transcription;
+            updateStatusDot('success');
+        }
+    } catch (err) {
+        console.error("Failed auto-transcription:", err);
+        alert("Transcription failed: " + err);
+        updateStatusDot('error');
+    } finally {
+        btnAutoTranscribe.disabled = false;
+        btnAutoTranscribe.textContent = 'Auto-Transcribe';
     }
 });
 
@@ -365,7 +470,6 @@ btnStartTts.addEventListener('click', async () => {
     setControlsDisabled(true);
     updateStatusDot('active');
     
-    // Format rate & pitch values to include +/- signs as expected by edge-tts
     const rateVal = parseInt(ttsRateSlider.value);
     const rateString = `${rateVal >= 0 ? '+' : ''}${rateVal}%`;
     
@@ -397,6 +501,68 @@ btnStartTts.addEventListener('click', async () => {
     }
 });
 
+// Start button (Tab 3 - Voice Cloning F5-TTS)
+btnStartClone.addEventListener('click', async () => {
+    if (isProcessing) return;
+    
+    if (!refAudioFile) {
+        alert("Please select a reference audio file first.");
+        return;
+    }
+    
+    const refText = cloneRefText.value.trim();
+    if (!refText) {
+        alert("Please enter the transcription text for the reference audio.");
+        return;
+    }
+    
+    const genText = cloneGenText.value.trim();
+    if (!genText) {
+        alert("Please enter the target script you want to synthesize.");
+        return;
+    }
+    
+    const filename = cloneFilename.value.trim();
+    if (!filename) {
+        alert("Please enter an output filename.");
+        return;
+    }
+    
+    // Hide player controls, show placeholder
+    playerContainerClone.classList.add('hidden');
+    playbackPlaceholderClone.classList.remove('hidden');
+    btnOpenFolderClone.classList.add('hidden');
+    cloneAudioPlayer.pause();
+    
+    setControlsDisabled(true);
+    updateStatusDot('active');
+    
+    const options = {
+        refAudio: refAudioFile,
+        refText: refText,
+        genText: genText,
+        outputDir: outputDirClone,
+        fileName: filename,
+        modelChoice: document.getElementById('clone-model-select').value,
+        removeNoise: document.getElementById('clone-remove-noise').checked
+    };
+    
+    try {
+        const response = await eel.start_clone(options)();
+        if (response !== "Started") {
+            alert(response);
+            setControlsDisabled(false);
+            updateStatusDot('idle');
+            statusMessageClone.textContent = response;
+        }
+    } catch (err) {
+        console.error("Error executing Voice Cloning task:", err);
+        setControlsDisabled(false);
+        updateStatusDot('error');
+        statusMessageClone.textContent = "Error: " + err;
+    }
+});
+
 // Cancel buttons
 btnCancel.addEventListener('click', async () => {
     if (!isProcessing) return;
@@ -417,6 +583,17 @@ btnCancelTts.addEventListener('click', async () => {
         await eel.cancel_task()();
     } catch (err) {
         console.error("Failed to cancel TTS task:", err);
+    }
+});
+
+btnCancelClone.addEventListener('click', async () => {
+    if (!isProcessing) return;
+    statusMessageClone.textContent = "Requesting cancel...";
+    btnCancelClone.disabled = true;
+    try {
+        await eel.cancel_task()();
+    } catch (err) {
+        console.error("Failed to cancel Voice Cloning task:", err);
     }
 });
 
@@ -448,12 +625,20 @@ btnOpenFolder.addEventListener('click', async () => {
 });
 
 btnOpenFolderTts.addEventListener('click', async () => {
-    // If outputDirTts is null, let's assume default dir is documents folder
-    const targetDir = outputDirTts || "C:\\Users\\" + displayOutputFolderTts.title; // backend will handle directory opening safely if we pass absolute folder
+    const targetDir = outputDirTts || "";
     try {
-        await eel.open_output_dir(outputDirTts || "")(); // Backend defaults to documents if empty
+        await eel.open_output_dir(targetDir)();
     } catch (err) {
         console.error("Failed to open TTS directory:", err);
+    }
+});
+
+btnOpenFolderClone.addEventListener('click', async () => {
+    const targetDir = outputDirClone || "";
+    try {
+        await eel.open_output_dir(targetDir)();
+    } catch (err) {
+        console.error("Failed to open Clone directory:", err);
     }
 });
 
@@ -461,8 +646,10 @@ btnOpenFolderTts.addEventListener('click', async () => {
 function updateStatusDot(state) {
     if (activeTab === 'tab-transcription') {
         statusDot.className = 'pulse-dot ' + state;
-    } else {
+    } else if (activeTab === 'tab-tts') {
         statusDotTts.className = 'pulse-dot ' + state;
+    } else if (activeTab === 'tab-clone') {
+        statusDotClone.className = 'pulse-dot ' + state;
     }
 }
 
@@ -472,8 +659,10 @@ eel.expose(update_status);
 function update_status(message) {
     if (activeTab === 'tab-transcription') {
         statusMessage.textContent = message;
-    } else {
+    } else if (activeTab === 'tab-tts') {
         statusMessageTts.textContent = message;
+    } else if (activeTab === 'tab-clone') {
+        statusMessageClone.textContent = message;
     }
     console.log("[Status]:", message);
 }
@@ -529,13 +718,17 @@ function task_completed(message) {
         if (segmentsText.length > 0) {
             btnCopy.disabled = false;
         }
-    } else {
+    } else if (activeTab === 'tab-tts') {
         statusMessageTts.textContent = message;
         btnOpenFolderTts.classList.remove('hidden');
+    } else if (activeTab === 'tab-clone') {
+        statusMessageClone.textContent = message;
+        btnOpenFolderClone.classList.remove('hidden');
     }
     
     btnCancel.disabled = false;
     btnCancelTts.disabled = false;
+    btnCancelClone.disabled = false;
 }
 
 eel.expose(task_failed);
@@ -545,12 +738,15 @@ function task_failed(errorMessage) {
     
     if (activeTab === 'tab-transcription') {
         statusMessage.textContent = "Failed: " + errorMessage;
-    } else {
+    } else if (activeTab === 'tab-tts') {
         statusMessageTts.textContent = "Failed: " + errorMessage;
+    } else if (activeTab === 'tab-clone') {
+        statusMessageClone.textContent = "Failed: " + errorMessage;
     }
     
     btnCancel.disabled = false;
     btnCancelTts.disabled = false;
+    btnCancelClone.disabled = false;
 }
 
 eel.expose(task_cancelled);
@@ -560,28 +756,43 @@ function task_cancelled() {
     
     if (activeTab === 'tab-transcription') {
         statusMessage.textContent = "Task cancelled by user.";
-    } else {
+    } else if (activeTab === 'tab-tts') {
         statusMessageTts.textContent = "Task cancelled by user.";
+    } else if (activeTab === 'tab-clone') {
+        statusMessageClone.textContent = "Task cancelled by user.";
     }
     
     btnCancel.disabled = false;
     btnCancelTts.disabled = false;
+    btnCancelClone.disabled = false;
 }
 
 // Exposed callback specifically for Text-to-Speech completion
 eel.expose(tts_completed);
 function tts_completed(tempFilePath) {
-    // Hide placeholder, show audio controls
     playbackPlaceholder.classList.add('hidden');
     playerContainer.classList.remove('hidden');
     
-    // Add dynamic query parameter to clear cache
     ttsAudioPlayer.src = `${tempFilePath}?t=${Date.now()}`;
     ttsAudioPlayer.classList.remove('hidden');
     ttsAudioPlayer.load();
     
-    // Auto-play generated speech
     ttsAudioPlayer.play().catch(err => {
+        console.warn("Audio autoplay blocked by browser policy:", err);
+    });
+}
+
+// Exposed callback specifically for Voice Cloning completion
+eel.expose(clone_completed);
+function clone_completed(tempFilePath) {
+    playbackPlaceholderClone.classList.add('hidden');
+    playerContainerClone.classList.remove('hidden');
+    
+    cloneAudioPlayer.src = `${tempFilePath}?t=${Date.now()}`;
+    cloneAudioPlayer.classList.remove('hidden');
+    cloneAudioPlayer.load();
+    
+    cloneAudioPlayer.play().catch(err => {
         console.warn("Audio autoplay blocked by browser policy:", err);
     });
 }

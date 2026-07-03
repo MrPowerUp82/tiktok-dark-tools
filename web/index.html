@@ -41,6 +41,10 @@
                 <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
                 Text-to-Speech (TTS)
             </button>
+            <button class="tab-btn" data-tab="tab-clone">
+                <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                Voice Cloning (F5-TTS)
+            </button>
         </nav>
 
         <!-- TAB 1: TRANSCRIPTION & AUDIO EXTRACT -->
@@ -365,6 +369,141 @@
                                 <div class="player-success-note">
                                     <svg class="icon success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
                                     <span>File saved and loaded successfully! Ready for playback.</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- TAB 3: VOICE CLONING (F5-TTS) -->
+        <main class="dashboard-grid" id="tab-clone">
+            <!-- Left Panel: Reference Audio & Configuration -->
+            <section class="panel-left card">
+                <div class="panel-header">
+                    <h2>Clone Configuration</h2>
+                </div>
+
+                <!-- Reference Audio selection -->
+                <div class="setting-group file-selectors">
+                    <div class="file-picker-card">
+                        <label class="field-label">Reference Audio (approx. 15s)</label>
+                        <div class="file-input-wrapper">
+                            <button class="btn btn-secondary btn-icon" id="btn-select-ref-audio">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+                            </button>
+                            <span class="file-path-display" id="display-ref-audio">Select reference audio file (.wav)...</span>
+                        </div>
+                    </div>
+
+                    <!-- Destination Folder and filename -->
+                    <div class="file-picker-card">
+                        <label class="field-label">Save Directory</label>
+                        <div class="file-input-wrapper">
+                            <button class="btn btn-secondary btn-icon" id="btn-select-folder-clone">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                            </button>
+                            <span class="file-path-display" id="display-output-folder-clone">Same directory as program</span>
+                        </div>
+                    </div>
+
+                    <div class="file-picker-card">
+                        <label class="field-label" for="clone-filename">Output Filename</label>
+                        <div class="file-input-wrapper">
+                            <input type="text" class="form-input" id="clone-filename" value="resultado_clone" placeholder="Filename (e.g. cloned_voice)">
+                            <span class="file-extension-label">.wav</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Model Choice Selection -->
+                <div class="setting-group">
+                    <label class="field-label" for="clone-model-select">F5-TTS Model Checkpoint</label>
+                    <select class="form-select" id="clone-model-select">
+                        <option value="pt" selected>Português (firstpixel/F5-TTS-pt-br - Recomendado)</option>
+                        <option value="en">Inglês/Chinês (SWivid/F5-TTS Base original)</option>
+                    </select>
+                </div>
+
+                <!-- Audio Processing Settings -->
+                <div class="setting-group">
+                    <label class="field-label">Reference Audio Filters</label>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="clone-remove-noise" checked>
+                            <span class="custom-checkbox">Remove Background Noise (Recommended)</span>
+                        </label>
+                    </div>
+                </div>
+
+
+                <!-- Reference Text Input & Auto Transcribe -->
+                <div class="setting-group">
+                    <div class="space-between">
+                        <label class="field-label" for="clone-ref-text">Reference Audio Transcription</label>
+                        <button class="btn btn-secondary btn-small" id="btn-auto-transcribe" title="Use Whisper to transcribe reference audio automatically">
+                            Auto-Transcribe
+                        </button>
+                    </div>
+                    <textarea class="form-textarea" id="clone-ref-text" placeholder="Type what is spoken in the reference audio here, or click 'Auto-Transcribe' to fill it using AI..."></textarea>
+                </div>
+
+                <!-- Target Text Input -->
+                <div class="setting-group">
+                    <label class="field-label" for="clone-gen-text">Target Script (Text to Synthesize)</label>
+                    <textarea class="form-textarea" id="clone-gen-text" placeholder="Type or paste the new text you want this voice to speak..."></textarea>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="action-buttons">
+                    <button class="btn btn-primary btn-large btn-glowing" id="btn-start-clone">
+                        <span>Clone Voice</span>
+                        <svg class="icon btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+                    </button>
+                    <button class="btn btn-danger btn-large hidden" id="btn-cancel-clone">
+                        <span>Cancel Task</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- Right Panel: Status & Player -->
+            <section class="panel-right">
+                <!-- Status dashboard -->
+                <div class="card status-card">
+                    <div class="status-header">
+                        <div class="status-indicator">
+                            <span class="pulse-dot idle" id="status-dot-clone"></span>
+                            <span class="status-text" id="status-message-clone">Idle</span>
+                        </div>
+                        <button class="btn btn-secondary btn-small hidden" id="btn-open-folder-clone">
+                            Open Destination
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Playback controls -->
+                <div class="card transcript-card flex-fill">
+                    <div class="panel-header">
+                        <h2>Cloned Audio Playback</h2>
+                    </div>
+                    <div class="playback-display-wrapper">
+                        <div class="playback-display">
+                            <div class="playback-placeholder" id="playback-placeholder-clone">
+                                <svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                                </svg>
+                                <p>Click <strong>Clone Voice</strong> to synthesize new speech using F5-TTS.</p>
+                                <p class="sub-placeholder">The generated audio file will load here for instant playback.</p>
+                            </div>
+                            
+                            <!-- Hidden HTML Audio element -->
+                            <div class="player-container hidden" id="player-container-clone">
+                                <audio id="clone-audio-player" controls></audio>
+                                <div class="player-success-note">
+                                    <svg class="icon success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                    <span>Voice cloned successfully! Playback ready.</span>
                                 </div>
                             </div>
                         </div>

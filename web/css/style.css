@@ -897,24 +897,24 @@ body {
     animation: fadeIn 0.4s ease;
 }
 
-#tts-audio-player {
+audio {
     width: 100%;
     outline: none;
 }
 
 /* Style default HTML audio player for dark mode */
-#tts-audio-player::-webkit-media-controls-enclosure {
+audio::-webkit-media-controls-enclosure {
     background-color: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
 }
 
-#tts-audio-player::-webkit-media-controls-panel {
+audio::-webkit-media-controls-panel {
     background-color: var(--bg-card);
 }
 
-#tts-audio-player::-webkit-media-controls-current-time-display,
-#tts-audio-player::-webkit-media-controls-time-remaining-display {
+audio::-webkit-media-controls-current-time-display,
+audio::-webkit-media-controls-time-remaining-display {
     color: var(--text-primary);
 }
 
