@@ -69,6 +69,13 @@ const cloneFilename = document.getElementById('clone-filename');
 const btnAutoTranscribe = document.getElementById('btn-auto-transcribe');
 const cloneRefText = document.getElementById('clone-ref-text');
 const cloneGenText = document.getElementById('clone-gen-text');
+const cloneModelSelect = document.getElementById('clone-model-select');
+const cloneTrimRef = document.getElementById('clone-trim-ref');
+const cloneRemoveSilence = document.getElementById('clone-remove-silence');
+const cloneNfeSelect = document.getElementById('clone-nfe');
+const cloneSeedInput = document.getElementById('clone-seed');
+const cloneSpeedSlider = document.getElementById('clone-speed');
+const cloneSpeedValue = document.getElementById('clone-speed-value');
 
 const btnStartClone = document.getElementById('btn-start-clone');
 const btnCancelClone = document.getElementById('btn-cancel-clone');
@@ -144,8 +151,13 @@ function setControlsDisabled(disabled) {
     btnAutoTranscribe.disabled = disabled;
     cloneRefText.disabled = disabled;
     cloneGenText.disabled = disabled;
-    document.getElementById('clone-model-select').disabled = disabled;
+    cloneModelSelect.disabled = disabled;
     document.getElementById('clone-remove-noise').disabled = disabled;
+    cloneTrimRef.disabled = disabled;
+    cloneRemoveSilence.disabled = disabled;
+    cloneNfeSelect.disabled = disabled;
+    cloneSeedInput.disabled = disabled;
+    cloneSpeedSlider.disabled = disabled;
 
     if (disabled) {
         btnStartClone.classList.add('hidden');
@@ -251,6 +263,12 @@ ttsRateSlider.addEventListener('input', (e) => {
 
 ttsPitchSlider.addEventListener('input', (e) => {
     ttsPitchValue.textContent = formatPitchLabel(parseInt(e.target.value));
+});
+
+// Clone speech speed slider label (Tab 3)
+cloneSpeedSlider.addEventListener('input', (e) => {
+    const speed = parseInt(e.target.value) / 100;
+    cloneSpeedValue.textContent = speed === 1 ? "Normal (1.0x)" : `${speed.toFixed(2)}x`;
 });
 
 // Watch radio buttons mode change (Tab 1)
@@ -360,7 +378,10 @@ btnAutoTranscribe.addEventListener('click', async () => {
     updateStatusDot('active');
     
     try {
-        const transcription = await eel.transcribe_reference(refAudioFile)();
+        // Hint whisper with the language of the selected model, and transcribe the
+        // exact same (trimmed) audio the cloning step will consume
+        const language = cloneModelSelect.value === 'pt' ? 'pt' : 'auto';
+        const transcription = await eel.transcribe_reference(refAudioFile, language, cloneTrimRef.checked)();
         if (transcription.startsWith("Error")) {
             alert(transcription);
             updateStatusDot('error');
@@ -537,14 +558,22 @@ btnStartClone.addEventListener('click', async () => {
     setControlsDisabled(true);
     updateStatusDot('active');
     
+    let seed = parseInt(cloneSeedInput.value);
+    if (isNaN(seed)) seed = -1;
+
     const options = {
         refAudio: refAudioFile,
         refText: refText,
         genText: genText,
         outputDir: outputDirClone,
         fileName: filename,
-        modelChoice: document.getElementById('clone-model-select').value,
-        removeNoise: document.getElementById('clone-remove-noise').checked
+        modelChoice: cloneModelSelect.value,
+        removeNoise: document.getElementById('clone-remove-noise').checked,
+        trimRef: cloneTrimRef.checked,
+        removeSilence: cloneRemoveSilence.checked,
+        nfeStep: parseInt(cloneNfeSelect.value),
+        seed: seed,
+        speed: parseInt(cloneSpeedSlider.value) / 100
     };
     
     try {

@@ -434,9 +434,41 @@
                             <input type="checkbox" id="clone-remove-noise" checked>
                             <span class="custom-checkbox">Remove Background Noise (Recommended)</span>
                         </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="clone-trim-ref" checked>
+                            <span class="custom-checkbox">Cortar referência em 15s (Recomendado)</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="clone-remove-silence">
+                            <span class="custom-checkbox">Remover silêncios longos do resultado</span>
+                        </label>
                     </div>
                 </div>
 
+                <!-- Generation Quality Settings -->
+                <div class="setting-row">
+                    <div class="setting-col">
+                        <label class="field-label" for="clone-nfe">Qualidade da Geração (NFE Steps)</label>
+                        <select class="form-select" id="clone-nfe">
+                            <option value="16">Rápida (16 passos)</option>
+                            <option value="32" selected>Padrão (32 passos - Recomendado)</option>
+                            <option value="64">Alta (64 passos - mais lenta)</option>
+                        </select>
+                    </div>
+                    <div class="setting-col">
+                        <label class="field-label" for="clone-seed">Seed (-1 = aleatória)</label>
+                        <input type="number" class="form-input" id="clone-seed" value="-1" min="-1" step="1" title="Use a mesma seed para reproduzir um resultado que você gostou">
+                    </div>
+                </div>
+
+                <!-- Speech speed slider -->
+                <div class="setting-group slider-group">
+                    <div class="slider-info">
+                        <label class="field-label" for="clone-speed">Velocidade da Fala</label>
+                        <span class="slider-value" id="clone-speed-value">Normal (1.0x)</span>
+                    </div>
+                    <input type="range" class="form-range" id="clone-speed" min="50" max="150" value="100" step="5">
+                </div>
 
                 <!-- Reference Text Input & Auto Transcribe -->
                 <div class="setting-group">

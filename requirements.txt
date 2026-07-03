@@ -9,3 +9,4 @@ torchaudio
 f5-tts
 noisereduce
 num2words
+edge-tts
