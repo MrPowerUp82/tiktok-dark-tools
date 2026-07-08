@@ -2,6 +2,8 @@
 
 **VoiceFlow** é um kit de ferramentas local e poderoso para processamento de áudio, transcrição inteligente e síntese de voz baseada em Inteligência Artificial. Projetado com uma interface moderna e dark mode responsiva via [Eel](https://github.com/python-eel/Eel), o VoiceFlow integra modelos avançados como **Faster-Whisper** e **F5-TTS** para oferecer resultados profissionais de forma local.
 
+![Interface do VoiceFlow](assets/screenshot.png)
+
 ---
 
 ## 🚀 Funcionalidades
