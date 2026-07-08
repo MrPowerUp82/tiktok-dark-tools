@@ -70,6 +70,63 @@ def is_audio_file(file_path):
     ext = os.path.splitext(file_path)[1].lower()
     return ext in ['.mp3', '.wav', '.m4a', '.ogg', '.flac', '.aac', '.wma', '.webm']
 
+class CustomSegment:
+    def __init__(self, start, end, text):
+        self.start = start
+        self.end = end
+        self.text = text
+
+def create_custom_segment(words):
+    start = words[0].start
+    end = words[-1].end
+    
+    text = ""
+    for i, w in enumerate(words):
+        w_text = w.word
+        if i > 0 and not w_text.startswith(" ") and not text.endswith(" "):
+            text += " " + w_text
+        else:
+            text += w_text
+    text = text.strip()
+    return CustomSegment(start, end, text)
+
+def make_tiktok_segments(segments, max_words=3, max_duration=1.5):
+    """
+    Groups words from faster-whisper segments into shorter segments suitable for TikTok.
+    """
+    current_words = []
+    current_start = None
+    
+    for segment in segments:
+        words = getattr(segment, 'words', None)
+        if not words:
+            # Fallback if no word timestamps are available
+            if current_words:
+                yield create_custom_segment(current_words)
+                current_words = []
+                current_start = None
+            yield segment
+            continue
+            
+        for w in words:
+            w_start = w.start
+            w_end = w.end
+            
+            if current_start is None:
+                current_start = w_start
+            
+            current_words.append(w)
+            
+            # Check if we reached the limits
+            duration = w_end - current_start
+            if len(current_words) >= max_words or duration >= max_duration:
+                yield create_custom_segment(current_words)
+                current_words = []
+                current_start = None
+                
+    if current_words:
+        yield create_custom_segment(current_words)
+
 def format_time_srt(seconds):
     """Formats seconds into SRT subtitle timestamp format (HH:MM:SS,mmm)."""
     hours = int(seconds // 3600)
@@ -255,6 +312,9 @@ def process_worker(options):
     device = options.get('device', 'cpu')
     compute_type = options.get('computeType', 'int8')
     export_formats = options.get('exportFormats', ['txt'])
+    tiktok_style = options.get('tiktokStyle', False)
+    tiktok_max_words = int(options.get('tiktokMaxWords', 3))
+    tiktok_max_duration = float(options.get('tiktokMaxDuration', 1.5))
 
     if not input_file or not os.path.exists(input_file):
         eel.task_failed("Input file does not exist.")()
@@ -328,9 +388,15 @@ def process_worker(options):
             if language and language != 'auto':
                 transcribe_args["language"] = language
 
+            if tiktok_style:
+                transcribe_args["word_timestamps"] = True
+
             segments, info = model.transcribe(audio_path, **transcribe_args)
             total_duration = info.duration
             transcribed_segments = []
+            
+            if tiktok_style:
+                segments = make_tiktok_segments(segments, max_words=tiktok_max_words, max_duration=tiktok_max_duration)
             
             # Read from generator to perform actual processing
             for segment in segments:

@@ -119,6 +119,9 @@ function setControlsDisabled(disabled) {
     document.getElementById('export-txt').disabled = disabled;
     document.getElementById('export-srt').disabled = disabled;
     document.getElementById('export-vtt').disabled = disabled;
+    document.getElementById('export-tiktok').disabled = disabled;
+    document.getElementById('tiktok-max-words').disabled = disabled;
+    document.getElementById('tiktok-max-duration').disabled = disabled;
     
     if (disabled) {
         btnStart.classList.add('hidden');
@@ -274,6 +277,17 @@ cloneSpeedSlider.addEventListener('input', (e) => {
 // Watch radio buttons mode change (Tab 1)
 document.querySelectorAll('input[name="action-mode"]').forEach(radio => {
     radio.addEventListener('change', updateModeUI);
+});
+
+// Toggle TikTok style options
+const exportTiktok = document.getElementById('export-tiktok');
+const tiktokOptions = document.getElementById('tiktok-options');
+exportTiktok.addEventListener('change', () => {
+    if (exportTiktok.checked) {
+        tiktokOptions.classList.remove('hidden');
+    } else {
+        tiktokOptions.classList.add('hidden');
+    }
 });
 
 // Select input file (Tab 1)
@@ -447,7 +461,10 @@ btnStart.addEventListener('click', async () => {
         language: document.getElementById('language-select').value,
         device: document.getElementById('device-select').value,
         computeType: document.getElementById('compute-type').value,
-        exportFormats: exportFormats
+        exportFormats: exportFormats,
+        tiktokStyle: document.getElementById('export-tiktok').checked,
+        tiktokMaxWords: parseInt(document.getElementById('tiktok-max-words').value) || 3,
+        tiktokMaxDuration: parseFloat(document.getElementById('tiktok-max-duration').value) || 1.5
     };
     
     try {
