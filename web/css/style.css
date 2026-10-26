@@ -936,3 +936,25 @@ audio::-webkit-media-controls-time-remaining-display {
     width: 14px;
     height: 14px;
 }
+
+/* Reference audio quality feedback (voice cloning tab) */
+.ref-quality {
+    margin-top: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--text-secondary);
+}
+
+.ref-quality ul {
+    margin: 0.35rem 0 0;
+    padding-left: 1.1rem;
+    color: var(--color-warning);
+}
+
+.ref-quality.ok {
+    border-color: rgba(16, 185, 129, 0.35);
+}

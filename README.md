@@ -22,10 +22,14 @@
 *   **Controle Dinâmico**: Ajuste a velocidade da fala (Speed) e o tom da voz (Pitch).
 *   **Player Embutido**: Ouça o áudio gerado diretamente pela interface antes de exportar.
 
-### 3. Clonagem de Voz (F5-TTS)
-*   **Modelos de Ponta**: Suporta o modelo original F5-TTS e a versão especializada em Português Brasileiro (`firstpixel/F5-TTS-pt-br`).
-*   **Auto-Transcrição**: Transcreva o áudio de referência automaticamente com Whisper com apenas um clique.
-*   **Filtros Integrados**: Remoção de ruído de fundo do áudio de referência e remoção de silêncios do áudio gerado.
+### 3. Clonagem de Voz (F5-TTS e OmniVoice)
+*   **Dois motores selecionáveis**: **F5-TTS** (modelo original ou a versão em Português Brasileiro `firstpixel/F5-TTS-pt-br`) e **OmniVoice** ([k2-fsa](https://github.com/k2-fsa/OmniVoice), 600+ idiomas, instalação opcional).
+*   **Melhor trecho da referência**: em vez de cortar os primeiros segundos, o app escolhe a janela de fala mais densa (cortando só no meio de pausas, nunca no meio de uma palavra) com a duração ideal de cada motor, e transcreve exatamente esse trecho.
+*   **Verificação de qualidade**: avisa sobre referência curta, com pouca fala, muito ruído, volume baixo ou clipping.
+*   **Auto-Transcrição**: Whisper transcreve o trecho de referência com um clique; se o trecho for recortado, o texto é atualizado automaticamente.
+*   **Filtros Integrados**: remoção de ruído (aplicada só quando necessária), normalização de volume da referência e pós-processamento do resultado (corte de silêncio nas bordas, normalização de pico e fade).
+*   **Textos longos (OmniVoice)**: divisão por frases (respeitando abreviações como "Dr." e decimais), mesma seed em todos os trechos e junção com crossfade de 50 ms.
+*   **Controles F5-TTS**: passos NFE, seed, velocidade, fidelidade à voz (CFG) e Sway Sampling.
 
 ---
 
@@ -44,6 +48,7 @@ Para rodar o VoiceFlow localmente, você precisará de:
 *   `f5-tts` (Clonagem de voz via Flow Matching)
 *   `edge-tts` (Síntese de voz da Microsoft)
 *   `noisereduce` & `num2words` (Tratamento e pré-processamento de áudio)
+*   `omnivoice` (**opcional**, segundo motor de clonagem): `pip install omnivoice`. Ele fixa suas próprias versões de `torch`/`transformers`; se houver conflito com o `f5-tts`, use outro ambiente virtual.
 
 ---
 
@@ -69,10 +74,26 @@ Para rodar o VoiceFlow localmente, você precisará de:
    pip install -r requirements.txt
    ```
 
-4. **Inicie o aplicativo**:
+4. **(Opcional) Instale o OmniVoice** para usá-lo como motor de clonagem:
+   ```bash
+   pip install omnivoice
+   ```
+
+5. **Inicie o aplicativo**:
    ```bash
    python main.py
    ```
+
+6. **Rode os testes** dos utilitários de áudio/texto (não precisam de GPU nem de modelos):
+   ```bash
+   pip install pytest
+   python -m pytest tests
+   ```
+
+### Dicas para uma boa clonagem
+*   Use de **5 a 12 segundos** de fala limpa, de um só falante, sem música ao fundo. Referências longas pioram o resultado (o app seleciona o melhor trecho automaticamente).
+*   Confira o texto da transcrição de referência: erros nele geram palavras engolidas ou repetidas no início do áudio.
+*   Se gostou de um resultado, anote a **seed** exibida ao final para reproduzi-lo.
 
 ---
 

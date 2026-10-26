@@ -48,13 +48,16 @@ if sys.platform == 'win32':
                         except Exception:
                             pass
 
-import re
+import random
 import threading
 import subprocess
 import shutil
 import tkinter as tk
 from tkinter import filedialog
 import eel
+import numpy as np
+
+import voice_utils
 
 # Global variables to control background tasks and handle cancellation
 active_thread = None
@@ -63,7 +66,9 @@ ffmpeg_process = None
 
 # Heavy model caches so repeated runs don't reload checkpoints from disk
 f5tts_cache = {}          # (model_choice, device) -> F5TTS instance
+omnivoice_cache = {}      # device_map -> OmniVoice instance
 whisper_ref_model = None  # cached faster-whisper model for reference transcription
+ref_transcript_cache = {} # (path, mtime, engine, select_best) -> auto-transcribed reference text
 
 def is_audio_file(file_path):
     """Checks if the file extension corresponds to a supported audio format."""
@@ -559,60 +564,154 @@ def generate_tts(options):
     active_thread.start()
     return "Started"
 
-def prepare_reference_audio(audio_path, trim_seconds=15):
-    """Converts the reference audio to mono 24kHz WAV (optionally trimmed) so that
-    whisper, noise reduction and F5-TTS all consume the exact same audio content."""
-    import imageio_ffmpeg
-    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+# Reference passage length limits per engine, in seconds: (min, ideal, max).
+# F5-TTS clips references over ~12s on its own, which desyncs the reference text;
+# OmniVoice recommends 3-10s clips.
+ENGINE_REF_LIMITS = {
+    'f5': (4.0, 9.0, 11.5),
+    'omnivoice': (3.0, 7.0, 10.0),
+}
+REF_SCAN_SECONDS = 300          # only the first 5 minutes of a reference file are analysed
+DENOISE_SKIP_SNR_DB = 35.0      # already-clean references are not denoised (avoids artifacts)
+OMNIVOICE_MAX_CHUNK_CHARS = 250
+OMNIVOICE_REPO = "k2-fsa/OmniVoice"
+SAMPLE_RATE = 24000
 
+def _web_temp_dir():
     temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web', 'temp')
     os.makedirs(temp_dir, exist_ok=True)
+    return temp_dir
+
+def _ref_cache_key(audio_path, engine, select_best):
+    """Identifies a (file, engine, selection mode) so a transcript can be matched to the exact passage used."""
+    try:
+        mtime = os.path.getmtime(audio_path)
+    except OSError:
+        mtime = 0
+    return (os.path.abspath(audio_path), mtime, engine, bool(select_best))
+
+def prepare_reference_audio(audio_path, engine='f5', select_best=True, denoise=False):
+    """Builds the reference clip: mono 24kHz WAV, best passage for the engine (cut only inside
+    pauses), optional denoise and peak normalization. Whisper, noise reduction and the TTS engine
+    all consume this exact audio. Returns an info dict (see keys below)."""
+    import imageio_ffmpeg
+    import soundfile as sf
+
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    temp_dir = _web_temp_dir()
+    full_path = os.path.join(temp_dir, 'ref_full.wav')
     out_path = os.path.join(temp_dir, 'ref_prepared.wav')
 
-    cmd = [ffmpeg_exe, '-y', '-i', audio_path]
-    if trim_seconds:
-        cmd.extend(['-t', str(trim_seconds)])
-    cmd.extend(['-ac', '1', '-ar', '24000', '-acodec', 'pcm_s16le', out_path])
-
+    cmd = [ffmpeg_exe, '-y', '-i', audio_path, '-t', str(REF_SCAN_SECONDS),
+           '-ac', '1', '-ar', str(SAMPLE_RATE), '-acodec', 'pcm_s16le', full_path]
     result = subprocess.run(
         cmd, capture_output=True,
         creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
     )
-    if result.returncode != 0 or not os.path.exists(out_path):
+    if result.returncode != 0 or not os.path.exists(full_path):
         print("ffmpeg reference conversion failed, falling back to original file")
-        return audio_path
-    return out_path
+        return {'path': audio_path, 'start': 0.0, 'end': None, 'source_duration': None, 'duration': None,
+                'dropped_speech': False, 'denoised': False, 'warnings': [], 'analysis': None}
+
+    data, sr = sf.read(full_path, dtype='float32')
+    data = voice_utils.to_mono(data)
+    total = len(data) / sr
+    min_s, ideal_s, max_s = ENGINE_REF_LIMITS.get(engine, ENGINE_REF_LIMITS['f5'])
+
+    bounds = voice_utils.speech_bounds(data, sr)
+    if select_best:
+        start, end = voice_utils.pick_best_reference(data, sr, min_s, ideal_s, max_s)
+    else:
+        start, end = 0.0, total
+    start, end = float(start), float(end)  # plain floats: these cross the eel/JSON bridge
+    segment = data[int(start * sr):int(end * sr)]
+    dropped_speech = bool(bounds and (bounds[0] < start - 0.3 or bounds[1] > end + 0.3))
+
+    analysis = voice_utils.analyze_reference(segment, sr)
+    warnings = list(analysis['warnings'])
+    if not select_best and total > max_s + 0.5:
+        warnings.append(f"Referência com {total:.0f}s: acima de ~{max_s:.0f}s a clonagem tende a piorar. "
+                        "Ative a seleção do melhor trecho.")
+
+    denoised = False
+    if denoise and analysis['snr_db'] < DENOISE_SKIP_SNR_DB:
+        try:
+            import noisereduce as nr
+            segment = nr.reduce_noise(y=segment, sr=sr, prop_decrease=0.85).astype('float32')
+            denoised = True
+        except Exception as nr_err:
+            print("Failed to reduce noise:", nr_err)
+
+    segment = voice_utils.normalize_peak(segment, -3.0)
+    sf.write(out_path, segment, sr, subtype='PCM_16')
+    return {'path': out_path, 'start': start, 'end': end, 'source_duration': total,
+            'duration': len(segment) / sr, 'dropped_speech': dropped_speech, 'denoised': denoised,
+            'warnings': warnings, 'analysis': analysis}
+
+def postprocess_output(path):
+    """Trims edge silence, normalizes the peak and fades the edges of a generated WAV in place."""
+    import soundfile as sf
+    data, sr = sf.read(path, dtype='float32')
+    data = voice_utils.to_mono(data)
+    data = voice_utils.trim_edge_silence(data, sr, thr_db=-40.0, keep_ms=60)
+    data = voice_utils.apply_fade(voice_utils.normalize_peak(data, -2.0), sr)
+    sf.write(path, data, sr, subtype='PCM_16')
+
+def _get_whisper_ref_model():
+    """Returns the cached faster-whisper model used for reference transcription."""
+    global whisper_ref_model
+    if whisper_ref_model is None:
+        from faster_whisper import WhisperModel
+        # Use small model for fast reference audio transcription (cached between calls)
+        device = 'cuda' if len(dll_dirs) > 0 else 'cpu'
+        compute_type = 'float16' if device == 'cuda' else 'int8'
+        eel.update_status("Loading Whisper model for auto-transcription...")()
+        try:
+            whisper_ref_model = WhisperModel("small", device=device, compute_type=compute_type)
+        except Exception:
+            eel.update_status("CUDA failed for Whisper. Falling back to CPU...")()
+            whisper_ref_model = WhisperModel("small", device='cpu', compute_type='int8')
+    return whisper_ref_model
+
+def _transcribe_audio(path, language='auto'):
+    model = _get_whisper_ref_model()
+    transcribe_args = {"beam_size": 5}
+    if language and language != 'auto':
+        transcribe_args["language"] = language
+    segments, _info = model.transcribe(path, **transcribe_args)
+    return " ".join(seg.text.strip() for seg in segments).strip()
 
 @eel.expose
-def transcribe_reference(audio_path, language='auto', trim=True):
-    """Transcribes a reference audio file using faster-whisper on GPU if available, or CPU."""
-    global whisper_ref_model
+def analyze_reference(audio_path, engine='f5', trim=True):
+    """Reports which passage of the reference will be used and any quality problems."""
+    if not audio_path or not os.path.exists(audio_path):
+        return {'ok': False, 'message': "Arquivo não encontrado."}
+    try:
+        info = prepare_reference_audio(audio_path, engine=engine, select_best=trim)
+    except Exception as e:
+        return {'ok': False, 'message': f"Falha ao analisar a referência: {e}"}
+    if info['source_duration'] is None:
+        return {'ok': True, 'summary': "Não foi possível analisar o áudio; ele será usado como está.", 'warnings': []}
+    if info['dropped_speech']:
+        summary = (f"Referência de {info['source_duration']:.1f}s: será usado o trecho "
+                   f"{info['start']:.1f}s–{info['end']:.1f}s ({info['duration']:.1f}s).")
+    else:
+        summary = f"Referência de {info['source_duration']:.1f}s: será usada inteira (sem silêncio nas bordas)."
+    return {'ok': True, 'summary': summary, 'warnings': info['warnings']}
+
+@eel.expose
+def transcribe_reference(audio_path, language='auto', trim=True, engine='f5'):
+    """Transcribes the reference passage the cloning step will use, with faster-whisper."""
     if not audio_path or not os.path.exists(audio_path):
         return "Error: File does not exist."
 
     try:
-        from faster_whisper import WhisperModel
-
         eel.update_status("Preparando áudio de referência...")()
-        prepared_path = prepare_reference_audio(audio_path, trim_seconds=15 if trim else None)
-
-        # Use small model for fast reference audio transcription (cached between calls)
-        if whisper_ref_model is None:
-            device = 'cuda' if len(dll_dirs) > 0 else 'cpu'
-            compute_type = 'float16' if device == 'cuda' else 'int8'
-            eel.update_status("Loading Whisper model for auto-transcription...")()
-            try:
-                whisper_ref_model = WhisperModel("small", device=device, compute_type=compute_type)
-            except Exception:
-                eel.update_status("CUDA failed for Whisper. Falling back to CPU...")()
-                whisper_ref_model = WhisperModel("small", device='cpu', compute_type='int8')
+        prepared = prepare_reference_audio(audio_path, engine=engine, select_best=trim)
 
         eel.update_status("Transcribing reference audio...")()
-        transcribe_args = {"beam_size": 5}
-        if language and language != 'auto':
-            transcribe_args["language"] = language
-        segments, info = whisper_ref_model.transcribe(prepared_path, **transcribe_args)
-        text = " ".join([seg.text.strip() for seg in segments])
+        text = _transcribe_audio(prepared['path'], language)
+        ref_transcript_cache[_ref_cache_key(audio_path, engine, trim)] = text
 
         eel.update_status("Auto-transcription complete.")()
         return text
@@ -621,231 +720,218 @@ def transcribe_reference(audio_path, language='auto', trim=True):
         traceback.print_exc()
         return f"Error transcribing reference audio: {str(e)}"
 
+def _to_numpy_audio(audio):
+    """Converts an engine output (tensor or ndarray, any leading dims) to a mono float32 array."""
+    if hasattr(audio, 'detach'):
+        audio = audio.detach().cpu().numpy()
+    return voice_utils.to_mono(np.squeeze(np.asarray(audio)))
+
+def _synthesize_f5(ref_file, ref_text, gen_text, output_path, p):
+    """Runs F5-TTS. Returns the seed used."""
+    import torch
+    from f5_tts.api import F5TTS
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Reuse a cached model instance when possible (loading takes tens of seconds)
+    cache_key = (p['model_choice'], device)
+    tts = f5tts_cache.get(cache_key)
+    if tts is None:
+        if p['model_choice'] == 'pt':
+            eel.update_status("Carregando modelo em Português (firstpixel/F5-TTS-pt-br)...")()
+            from huggingface_hub import hf_hub_download
+            ckpt_path = hf_hub_download(repo_id="firstpixel/F5-TTS-pt-br", filename="pt-br/model_last.safetensors")
+            model_type = "F5TTS_Base"
+        else:
+            eel.update_status("Loading standard F5-TTS model (English/Chinese)...")()
+            ckpt_path = ""
+            model_type = "F5TTS_v1_Base"
+
+        tts = F5TTS(model=model_type, ckpt_file=ckpt_path, device=device)
+        f5tts_cache[cache_key] = tts
+    else:
+        eel.update_status("Modelo F5-TTS já em memória, reutilizando...")()
+
+    if cancel_requested:
+        return None
+
+    # The pt-br checkpoint requires lowercase text with numbers written as words
+    if p['model_choice'] == 'pt':
+        eel.update_status("Pré-processando texto para o modelo Português...")()
+        ref_text = voice_utils.normalize_text_pt(ref_text, lang='pt_BR', lowercase=True)
+        gen_text = voice_utils.normalize_text_pt(gen_text, lang='pt_BR', lowercase=True)
+        print("Preprocessed ref_text:", ref_text[:200])
+        print("Preprocessed gen_text:", gen_text[:200])
+
+    eel.update_status(f"Clonando a voz com F5-TTS ({device.upper()}, NFE {p['nfe_step']}, {p['speed']:.2f}x)...")()
+    infer_kwargs = {
+        "ref_file": ref_file,
+        "ref_text": ref_text,
+        "gen_text": gen_text,
+        "file_wave": output_path,
+        "nfe_step": p['nfe_step'],
+        "speed": p['speed'],
+        "remove_silence": p['remove_silence'],
+        "cfg_strength": p['cfg_strength'],
+        "sway_sampling_coef": p['sway_coef'],
+    }
+    if p['seed'] >= 0:
+        infer_kwargs["seed"] = p['seed']
+    try:
+        tts.infer(**infer_kwargs)
+    except TypeError:
+        # Older f5-tts releases don't accept some kwargs; retry with the basic call
+        tts.infer(ref_file=ref_file, ref_text=ref_text, gen_text=gen_text, file_wave=output_path)
+    return getattr(tts, 'seed', None)
+
+def _synthesize_omnivoice(ref_file, ref_text, gen_text, output_path, p):
+    """Runs OmniVoice (k2-fsa) zero-shot cloning, chunking long text. Returns the seed used."""
+    import torch
+    import soundfile as sf
+    try:
+        from omnivoice import OmniVoice
+    except ImportError:
+        raise Exception("O OmniVoice não está instalado. Instale com: pip install omnivoice")
+
+    use_cuda = torch.cuda.is_available()
+    device_map = "cuda:0" if use_cuda else "cpu"
+    model = omnivoice_cache.get(device_map)
+    if model is None:
+        eel.update_status(f"Carregando OmniVoice ({OMNIVOICE_REPO}) — o primeiro uso baixa o modelo...")()
+        model = OmniVoice.from_pretrained(
+            OMNIVOICE_REPO, device_map=device_map,
+            dtype=torch.float16 if use_cuda else torch.float32
+        )
+        omnivoice_cache[device_map] = model
+    else:
+        eel.update_status("OmniVoice já em memória, reutilizando...")()
+
+    if cancel_requested:
+        return None
+
+    # OmniVoice handles casing itself; only spell out numbers for Portuguese text
+    if p['language'] == 'pt':
+        ref_text = voice_utils.normalize_text_pt(ref_text, lang='pt_BR', lowercase=False)
+        gen_text = voice_utils.normalize_text_pt(gen_text, lang='pt_BR', lowercase=False)
+
+    chunks = voice_utils.split_text_chunks(gen_text, OMNIVOICE_MAX_CHUNK_CHARS)
+    if not chunks:
+        raise Exception("O texto a sintetizar está vazio.")
+
+    # The same seed for every chunk keeps the voice consistent across the whole script
+    seed = p['seed'] if p['seed'] >= 0 else random.randint(0, 2**31 - 1)
+    rendered = []
+    for i, chunk in enumerate(chunks, 1):
+        if cancel_requested:
+            return None
+        eel.update_status(f"Clonando a voz com OmniVoice ({device_map}, {p['nfe_step']} passos) — trecho {i}/{len(chunks)}...")()
+        torch.manual_seed(seed)
+        audio = model.generate(
+            text=chunk, ref_audio=ref_file, ref_text=ref_text,
+            num_step=p['nfe_step'], speed=p['speed']
+        )
+        wav = _to_numpy_audio(audio[0])
+        rendered.append(voice_utils.trim_edge_silence(wav, SAMPLE_RATE) if len(chunks) > 1 else wav)
+
+    final = voice_utils.crossfade_concat(rendered, SAMPLE_RATE, ms=50)
+    sf.write(output_path, final, SAMPLE_RATE, subtype='PCM_16')
+    return seed
+
 def clone_worker(options):
-    """Worker executing F5-TTS voice cloning in the background."""
+    """Worker executing voice cloning (F5-TTS or OmniVoice) in the background."""
     global cancel_requested
     ref_audio = options.get('refAudio')
     ref_text = options.get('refText')
     gen_text = options.get('genText')
     output_dir = options.get('outputDir')
     file_name = options.get('fileName', 'cloned_speech')
-    
+
     if not ref_audio or not os.path.exists(ref_audio):
         eel.task_failed("Reference audio file does not exist.")()
         return
-        
+
     if not ref_text:
         eel.task_failed("Reference text cannot be empty.")()
         return
-        
+
     if not gen_text:
         eel.task_failed("Target text to synthesize cannot be empty.")()
         return
-    
-    # --- Text preprocessing for F5-TTS (critical for Portuguese model) ---
-    # The pt-br model requires: lowercase text, numbers written as words
-    def preprocess_text_for_f5tts(text, lang='pt_BR'):
-        """Preprocesses text for F5-TTS inference.
-        - Converts to lowercase (required by the pt-br model)
-        - Converts currency (R$), percentages and numbers (Brazilian format:
-          '.' thousands separator, ',' decimal) to their written-out form
-        """
-        try:
-            from num2words import num2words
 
-            def parse_br_number(num_str):
-                """Parses '1.500,50' / '1.500' / '3,5' / '2024' into (int_part, dec_part)."""
-                if ',' in num_str:
-                    int_part, dec_part = num_str.split(',', 1)
-                    return int(int_part.replace('.', '')), dec_part
-                if '.' in num_str:
-                    parts = num_str.split('.')
-                    # Dots in groups of 3 digits => thousands separator, otherwise decimal
-                    if all(len(p) == 3 for p in parts[1:]):
-                        return int(num_str.replace('.', '')), None
-                    int_part, dec_part = num_str.split('.', 1)
-                    return int(int_part), dec_part
-                return int(num_str), None
-
-            number_pattern = r'\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?'
-
-            def replace_currency(match):
-                try:
-                    int_part, dec_part = parse_br_number(match.group(1))
-                    value = float(f"{int_part}.{dec_part or 0}")
-                    return num2words(value, lang=lang, to='currency')
-                except Exception:
-                    return match.group()
-
-            def replace_number(match):
-                num_str = match.group()
-                try:
-                    int_part, dec_part = parse_br_number(num_str)
-                    words = num2words(int_part, lang=lang)
-                    if dec_part:
-                        words += " vírgula " + num2words(int(dec_part), lang=lang)
-                    return words
-                except Exception:
-                    return num_str
-
-            # Currency first (R$ 1.500,50 -> "mil e quinhentos reais e cinquenta centavos")
-            text = re.sub(r'R\$\s*(' + number_pattern + r')', replace_currency, text, flags=re.IGNORECASE)
-            # Then remaining numbers
-            text = re.sub(number_pattern, replace_number, text)
-            # Percent sign spoken out
-            text = text.replace('%', ' por cento')
-        except ImportError:
-            print("Warning: num2words not installed, skipping number conversion")
-        
-        # Fix common Portuguese num2words quirks
-        text = text.replace(" e um mil", " e mil")
-        text = text.replace("um mil ", "mil ")
-        
-        # Convert to lowercase (required by the model)
-        text = text.lower()
-        
-        return text
-        
     if not output_dir or not os.path.exists(output_dir):
         # Default to user's Documents folder
         output_dir = os.path.join(os.path.expanduser('~'), 'Documents')
         os.makedirs(output_dir, exist_ok=True)
-        
+
     output_path = os.path.join(output_dir, f"{file_name}.wav")
-    
+
+    def number(key, default, cast):
+        try:
+            return cast(options.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    engine = options.get('engine', 'f5')
+    model_choice = options.get('modelChoice', 'pt')
+    trim_ref = bool(options.get('trimRef', True))
+    params = {
+        'model_choice': model_choice,
+        'language': options.get('language', 'pt'),
+        'speed': number('speed', 1.0, float),
+        'nfe_step': number('nfeStep', 32, int),
+        'seed': number('seed', -1, int),
+        'cfg_strength': number('cfgStrength', 2.0, float),
+        'sway_coef': number('swayCoef', -1.0, float),
+        'remove_silence': bool(options.get('removeSilence', False)),
+    }
+    # Language hint for Whisper when the reference has to be re-transcribed
+    if engine == 'omnivoice':
+        whisper_lang = params['language'] if params['language'] != 'other' else 'auto'
+    else:
+        whisper_lang = 'pt' if model_choice == 'pt' else 'auto'
+
     try:
-        model_choice = options.get('modelChoice', 'pt')
-
-        # Generation parameters (with safe defaults matching F5-TTS)
-        try:
-            speed = float(options.get('speed', 1.0))
-        except (TypeError, ValueError):
-            speed = 1.0
-        try:
-            nfe_step = int(options.get('nfeStep', 32))
-        except (TypeError, ValueError):
-            nfe_step = 32
-        try:
-            seed = int(options.get('seed', -1))
-        except (TypeError, ValueError):
-            seed = -1
-        remove_silence = bool(options.get('removeSilence', False))
-        trim_ref = bool(options.get('trimRef', True))
-
-        import torch
-        from f5_tts.api import F5TTS
-
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-
-        # Reuse a cached model instance when possible (loading takes tens of seconds)
-        cache_key = (model_choice, device)
-        tts = f5tts_cache.get(cache_key)
-        if tts is None:
-            if model_choice == 'pt':
-                eel.update_status("Carregando modelo em Português (firstpixel/F5-TTS-pt-br)...")()
-                from huggingface_hub import hf_hub_download
-                ckpt_path = hf_hub_download(repo_id="firstpixel/F5-TTS-pt-br", filename="pt-br/model_last.safetensors")
-                model_type = "F5TTS_Base"
-            else:
-                eel.update_status("Loading standard F5-TTS model (English/Chinese)...")()
-                ckpt_path = ""
-                model_type = "F5TTS_v1_Base"
-
-            tts = F5TTS(
-                model=model_type,
-                ckpt_file=ckpt_path,
-                device=device
-            )
-            f5tts_cache[cache_key] = tts
-        else:
-            eel.update_status("Modelo F5-TTS já em memória, reutilizando...")()
-
-        if cancel_requested:
-            eel.task_cancelled()()
-            return
-
-        # Normalize the reference to mono 24kHz WAV (and trim to 15s if requested).
-        # F5-TTS degrades sharply with references longer than ~15s.
         eel.update_status("Preparando áudio de referência...")()
-        ref_file_to_use = prepare_reference_audio(ref_audio, trim_seconds=15 if trim_ref else None)
+        prepared = prepare_reference_audio(
+            ref_audio, engine=engine, select_best=trim_ref,
+            denoise=bool(options.get('removeNoise', True))
+        )
+        ref_file = prepared['path']
+        eel.clone_warnings(prepared['warnings'])()
 
-        # Check if noise reduction is requested
-        remove_noise = options.get('removeNoise', True)
-
-        if remove_noise:
-            try:
-                eel.update_status("Removendo ruído de fundo do áudio de referência...")()
-                import noisereduce as nr
-                import soundfile as sf
-                import numpy as np
-
-                try:
-                    data, rate = sf.read(ref_file_to_use)
-                except Exception:
-                    from pydub import AudioSegment
-                    audio = AudioSegment.from_file(ref_file_to_use)
-                    rate = audio.frame_rate
-                    samples = np.array(audio.get_array_of_samples()).astype(np.float32)
-                    if audio.sample_width == 2:
-                        samples /= 32768.0
-                    elif audio.sample_width == 4:
-                        samples /= 2147483648.0
-                    if audio.channels == 2:
-                        samples = samples.reshape((-1, 2))
-                    data = samples
-
-                reduced_noise = nr.reduce_noise(y=data, sr=rate)
-
-                temp_clean_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web', 'temp')
-                os.makedirs(temp_clean_dir, exist_ok=True)
-                cleaned_path = os.path.join(temp_clean_dir, 'cleaned_ref.wav')
-
-                sf.write(cleaned_path, reduced_noise, rate)
-                ref_file_to_use = cleaned_path
-                print("Noise reduction complete. Cleaned reference saved to:", ref_file_to_use)
-            except Exception as nr_err:
-                print("Failed to reduce noise:", nr_err)
+        # If the chosen passage excludes speech, the typed text no longer matches the audio:
+        # transcribe the passage, unless the user already auto-transcribed this exact selection.
+        key = _ref_cache_key(ref_audio, engine, trim_ref)
+        if prepared['dropped_speech'] and key not in ref_transcript_cache:
+            eel.update_status("Referência recortada: transcrevendo o trecho escolhido...")()
+            new_text = _transcribe_audio(ref_file, whisper_lang)
+            if new_text:
+                ref_text = new_text
+                ref_transcript_cache[key] = new_text
+                eel.clone_ref_text_updated(new_text)()
 
         if cancel_requested:
             eel.task_cancelled()()
             return
 
-        # Apply text preprocessing for Portuguese model
-        if model_choice == 'pt':
-            eel.update_status("Pré-processando texto para o modelo Português...")()
-            ref_text = preprocess_text_for_f5tts(ref_text, lang='pt_BR')
-            gen_text = preprocess_text_for_f5tts(gen_text, lang='pt_BR')
-            print("Preprocessed ref_text:", ref_text[:200])
-            print("Preprocessed gen_text:", gen_text[:200])
+        if engine == 'omnivoice':
+            seed_used = _synthesize_omnivoice(ref_file, ref_text, gen_text, output_path, params)
+        else:
+            seed_used = _synthesize_f5(ref_file, ref_text, gen_text, output_path, params)
 
-        eel.update_status(f"Clonando a voz com F5-TTS ({device.upper()}, NFE {nfe_step}, {speed:.2f}x)...")()
-        infer_kwargs = {
-            "ref_file": ref_file_to_use,
-            "ref_text": ref_text,
-            "gen_text": gen_text,
-            "file_wave": output_path,
-            "nfe_step": nfe_step,
-            "speed": speed,
-            "remove_silence": remove_silence,
-        }
-        if seed >= 0:
-            infer_kwargs["seed"] = seed
-        try:
-            wav, sr, _ = tts.infer(**infer_kwargs)
-        except TypeError:
-            # Older f5-tts releases don't accept some kwargs; retry with the basic call
-            wav, sr, _ = tts.infer(
-                ref_file=ref_file_to_use,
-                ref_text=ref_text,
-                gen_text=gen_text,
-                file_wave=output_path
-            )
-        seed_used = getattr(tts, 'seed', None)
+        if cancel_requested:
+            eel.task_cancelled()()
+            return
+
+        if options.get('postProcess', True):
+            eel.update_status("Pós-processando o áudio gerado...")()
+            try:
+                postprocess_output(output_path)
+            except Exception as pp_err:
+                print("Post-processing failed, keeping raw output:", pp_err)
 
         # Copy to web temp folder for playing in UI player
-        web_temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web', 'temp')
-        os.makedirs(web_temp_dir, exist_ok=True)
-        web_temp_path = os.path.join(web_temp_dir, 'playback_clone.wav')
+        web_temp_path = os.path.join(_web_temp_dir(), 'playback_clone.wav')
         try:
             shutil.copy(output_path, web_temp_path)
         except Exception as e:
@@ -856,7 +942,7 @@ def clone_worker(options):
             done_msg += f" (seed: {seed_used})"
         eel.task_completed(done_msg)()
         eel.clone_completed("temp/playback_clone.wav")()
-        
+
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -868,7 +954,7 @@ def start_clone(options):
     global active_thread, cancel_requested
     if active_thread and active_thread.is_alive():
         return "A task is already in progress."
-        
+
     cancel_requested = False
     active_thread = threading.Thread(target=clone_worker, args=(options,))
     active_thread.start()

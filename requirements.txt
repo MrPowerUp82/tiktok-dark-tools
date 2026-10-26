@@ -10,3 +10,9 @@ f5-tts
 noisereduce
 num2words
 edge-tts
+numpy
+soundfile
+
+# Optional second voice cloning engine (OmniVoice, k2-fsa). Install separately if wanted:
+#   pip install omnivoice
+# It pins its own torch/transformers versions; use a separate venv if it conflicts with f5-tts.

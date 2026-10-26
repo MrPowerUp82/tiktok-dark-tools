@@ -70,6 +70,14 @@ const btnAutoTranscribe = document.getElementById('btn-auto-transcribe');
 const cloneRefText = document.getElementById('clone-ref-text');
 const cloneGenText = document.getElementById('clone-gen-text');
 const cloneModelSelect = document.getElementById('clone-model-select');
+const cloneEngineSelect = document.getElementById('clone-engine');
+const cloneLanguageSelect = document.getElementById('clone-language');
+const cloneF5ModelGroup = document.getElementById('clone-f5-model-group');
+const cloneLanguageGroup = document.getElementById('clone-language-group');
+const cloneCfgInput = document.getElementById('clone-cfg');
+const cloneSwayInput = document.getElementById('clone-sway');
+const clonePostProcess = document.getElementById('clone-post-process');
+const cloneRefQuality = document.getElementById('clone-ref-quality');
 const cloneTrimRef = document.getElementById('clone-trim-ref');
 const cloneRemoveSilence = document.getElementById('clone-remove-silence');
 const cloneNfeSelect = document.getElementById('clone-nfe');
@@ -155,6 +163,11 @@ function setControlsDisabled(disabled) {
     cloneRefText.disabled = disabled;
     cloneGenText.disabled = disabled;
     cloneModelSelect.disabled = disabled;
+    cloneEngineSelect.disabled = disabled;
+    cloneLanguageSelect.disabled = disabled;
+    cloneCfgInput.disabled = disabled;
+    cloneSwayInput.disabled = disabled;
+    clonePostProcess.disabled = disabled;
     document.getElementById('clone-remove-noise').disabled = disabled;
     cloneTrimRef.disabled = disabled;
     cloneRemoveSilence.disabled = disabled;
@@ -346,6 +359,61 @@ btnSelectFolderTts.addEventListener('click', async () => {
     }
 });
 
+// --- Voice cloning helpers (Tab 3) ---
+function currentEngine() {
+    return cloneEngineSelect.value;
+}
+
+// Language hint for Whisper: the F5 checkpoint decides it, OmniVoice uses the language select
+function referenceLanguage() {
+    if (currentEngine() === 'omnivoice') {
+        return cloneLanguageSelect.value === 'other' ? 'auto' : cloneLanguageSelect.value;
+    }
+    return cloneModelSelect.value === 'pt' ? 'pt' : 'auto';
+}
+
+// Shows only the controls that apply to the selected engine
+function updateEngineUI() {
+    const omni = currentEngine() === 'omnivoice';
+    cloneF5ModelGroup.classList.toggle('hidden', omni);
+    cloneLanguageGroup.classList.toggle('hidden', !omni);
+    document.querySelectorAll('#tab-clone .f5-only').forEach(el => el.classList.toggle('hidden', omni));
+}
+
+// Renders the passage summary and quality warnings under the reference file picker
+function showRefQuality(summary, warnings) {
+    cloneRefQuality.innerHTML = '';
+    const line = document.createElement('div');
+    line.textContent = summary;
+    cloneRefQuality.appendChild(line);
+    if (warnings && warnings.length) {
+        const list = document.createElement('ul');
+        warnings.forEach(w => {
+            const li = document.createElement('li');
+            li.textContent = w;
+            list.appendChild(li);
+        });
+        cloneRefQuality.appendChild(list);
+    }
+    cloneRefQuality.classList.toggle('ok', !(warnings && warnings.length));
+    cloneRefQuality.classList.remove('hidden');
+}
+
+async function refreshRefAnalysis() {
+    if (!refAudioFile) return;
+    cloneRefQuality.classList.add('hidden');
+    try {
+        const result = await eel.analyze_reference(refAudioFile, currentEngine(), cloneTrimRef.checked)();
+        if (result.ok) {
+            showRefQuality(result.summary, result.warnings);
+        } else {
+            showRefQuality(result.message, []);
+        }
+    } catch (err) {
+        console.error("Failed to analyze reference audio:", err);
+    }
+}
+
 // Select reference audio (Tab 3)
 btnSelectRefAudio.addEventListener('click', async () => {
     if (isProcessing) return;
@@ -356,11 +424,18 @@ btnSelectRefAudio.addEventListener('click', async () => {
             displayRefAudio.textContent = getBasename(path);
             displayRefAudio.title = path;
             displayRefAudio.style.color = 'var(--text-primary)';
+            refreshRefAnalysis();
         }
     } catch (err) {
         console.error("Failed to select reference audio:", err);
     }
 });
+
+cloneEngineSelect.addEventListener('change', () => {
+    updateEngineUI();
+    refreshRefAnalysis();
+});
+cloneTrimRef.addEventListener('change', refreshRefAnalysis);
 
 // Select output folder (Tab 3)
 btnSelectFolderClone.addEventListener('click', async () => {
@@ -392,10 +467,9 @@ btnAutoTranscribe.addEventListener('click', async () => {
     updateStatusDot('active');
     
     try {
-        // Hint whisper with the language of the selected model, and transcribe the
-        // exact same (trimmed) audio the cloning step will consume
-        const language = cloneModelSelect.value === 'pt' ? 'pt' : 'auto';
-        const transcription = await eel.transcribe_reference(refAudioFile, language, cloneTrimRef.checked)();
+        // Transcribe the exact same (selected) passage the cloning step will consume
+        const transcription = await eel.transcribe_reference(
+            refAudioFile, referenceLanguage(), cloneTrimRef.checked, currentEngine())();
         if (transcription.startsWith("Error")) {
             alert(transcription);
             updateStatusDot('error');
@@ -584,11 +658,16 @@ btnStartClone.addEventListener('click', async () => {
         genText: genText,
         outputDir: outputDirClone,
         fileName: filename,
+        engine: currentEngine(),
         modelChoice: cloneModelSelect.value,
+        language: cloneLanguageSelect.value,
         removeNoise: document.getElementById('clone-remove-noise').checked,
         trimRef: cloneTrimRef.checked,
+        postProcess: clonePostProcess.checked,
         removeSilence: cloneRemoveSilence.checked,
         nfeStep: parseInt(cloneNfeSelect.value),
+        cfgStrength: parseFloat(cloneCfgInput.value) || 2.0,
+        swayCoef: isNaN(parseFloat(cloneSwayInput.value)) ? -1.0 : parseFloat(cloneSwayInput.value),
         seed: seed,
         speed: parseInt(cloneSpeedSlider.value) / 100
     };
@@ -843,7 +922,22 @@ function clone_completed(tempFilePath) {
     });
 }
 
+// Backend callback: the reference was cut to the best passage, so its transcript was refreshed
+eel.expose(clone_ref_text_updated);
+function clone_ref_text_updated(text) {
+    cloneRefText.value = text;
+}
+
+// Backend callback: quality warnings found in the reference actually used for cloning
+eel.expose(clone_warnings);
+function clone_warnings(warnings) {
+    if (warnings && warnings.length) {
+        showRefQuality("Verificação da referência usada:", warnings);
+    }
+}
+
 // Initial UI triggers
+updateEngineUI();
 updateModeUI();
 loadVoices();
 console.log("VoiceFlow UI and tabs loaded successfully.");

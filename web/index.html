@@ -43,7 +43,7 @@
             </button>
             <button class="tab-btn" data-tab="tab-clone">
                 <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
-                Voice Cloning (F5-TTS)
+                Voice Cloning (F5-TTS / OmniVoice)
             </button>
         </nav>
 
@@ -395,7 +395,7 @@
             </section>
         </main>
 
-        <!-- TAB 3: VOICE CLONING (F5-TTS) -->
+        <!-- TAB 3: VOICE CLONING (F5-TTS / OmniVoice) -->
         <main class="dashboard-grid" id="tab-clone">
             <!-- Left Panel: Reference Audio & Configuration -->
             <section class="panel-left card">
@@ -406,13 +406,14 @@
                 <!-- Reference Audio selection -->
                 <div class="setting-group file-selectors">
                     <div class="file-picker-card">
-                        <label class="field-label">Reference Audio (approx. 15s)</label>
+                        <label class="field-label">Reference Audio (5–12s of clean speech)</label>
                         <div class="file-input-wrapper">
                             <button class="btn btn-secondary btn-icon" id="btn-select-ref-audio">
                                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
                             </button>
                             <span class="file-path-display" id="display-ref-audio">Select reference audio file (.wav)...</span>
                         </div>
+                        <div class="ref-quality hidden" id="clone-ref-quality"></div>
                     </div>
 
                     <!-- Destination Folder and filename -->
@@ -437,10 +438,27 @@
 
                 <!-- Model Choice Selection -->
                 <div class="setting-group">
+                    <label class="field-label" for="clone-engine">Voice Cloning Engine</label>
+                    <select class="form-select" id="clone-engine">
+                        <option value="f5" selected>F5-TTS (modelo pt-br dedicado)</option>
+                        <option value="omnivoice">OmniVoice (k2-fsa, 600+ idiomas — requer pip install omnivoice)</option>
+                    </select>
+                </div>
+
+                <div class="setting-group" id="clone-f5-model-group">
                     <label class="field-label" for="clone-model-select">F5-TTS Model Checkpoint</label>
                     <select class="form-select" id="clone-model-select">
                         <option value="pt" selected>Português (firstpixel/F5-TTS-pt-br - Recomendado)</option>
                         <option value="en">Inglês/Chinês (SWivid/F5-TTS Base original)</option>
+                    </select>
+                </div>
+
+                <div class="setting-group hidden" id="clone-language-group">
+                    <label class="field-label" for="clone-language">Idioma do texto</label>
+                    <select class="form-select" id="clone-language">
+                        <option value="pt" selected>Português (números escritos por extenso)</option>
+                        <option value="en">Inglês</option>
+                        <option value="other">Outro idioma</option>
                     </select>
                 </div>
 
@@ -454,9 +472,13 @@
                         </label>
                         <label class="checkbox-label">
                             <input type="checkbox" id="clone-trim-ref" checked>
-                            <span class="custom-checkbox">Cortar referência em 15s (Recomendado)</span>
+                            <span class="custom-checkbox">Selecionar o melhor trecho da referência (Recomendado)</span>
                         </label>
                         <label class="checkbox-label">
+                            <input type="checkbox" id="clone-post-process" checked>
+                            <span class="custom-checkbox">Pós-processar resultado: cortar bordas e normalizar volume (Recomendado)</span>
+                        </label>
+                        <label class="checkbox-label f5-only">
                             <input type="checkbox" id="clone-remove-silence">
                             <span class="custom-checkbox">Remover silêncios longos do resultado</span>
                         </label>
@@ -486,6 +508,18 @@
                         <span class="slider-value" id="clone-speed-value">Normal (1.0x)</span>
                     </div>
                     <input type="range" class="form-range" id="clone-speed" min="50" max="150" value="100" step="5">
+                </div>
+
+                <!-- F5-TTS advanced sampling parameters -->
+                <div class="setting-row f5-only">
+                    <div class="setting-col">
+                        <label class="field-label" for="clone-cfg">Fidelidade à voz (CFG)</label>
+                        <input type="number" class="form-input" id="clone-cfg" value="2" min="0.5" max="5" step="0.1" title="Padrão 2. Valores maiores seguem mais a referência, mas podem soar artificiais">
+                    </div>
+                    <div class="setting-col">
+                        <label class="field-label" for="clone-sway">Sway Sampling</label>
+                        <input type="number" class="form-input" id="clone-sway" value="-1" min="-1" max="1" step="0.1" title="Padrão -1. Use 0 para desativar">
+                    </div>
                 </div>
 
                 <!-- Reference Text Input & Auto Transcribe -->
@@ -544,7 +578,7 @@
                                     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
                                     <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
                                 </svg>
-                                <p>Click <strong>Clone Voice</strong> to synthesize new speech using F5-TTS.</p>
+                                <p>Click <strong>Clone Voice</strong> to synthesize new speech with the selected engine.</p>
                                 <p class="sub-placeholder">The generated audio file will load here for instant playback.</p>
                             </div>
                             
