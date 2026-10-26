@@ -49,3 +49,5 @@ _temp_*
 **/_temp_*
 
 web/temp/
+# graphify knowledge graph output
+graphify-out/
